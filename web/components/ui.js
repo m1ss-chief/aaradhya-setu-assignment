@@ -79,7 +79,18 @@ export function toDateInput(date) {
 }
 
 // Modal confirmation for destructive actions. Esc or the backdrop cancels.
-export function ConfirmDialog({ open, title, children, confirmLabel = 'Delete', busy = false, onConfirm, onCancel }) {
+// tone: 'danger' (red, for deletes) or 'primary' (for other irreversible actions).
+export function ConfirmDialog({
+  open,
+  title,
+  children,
+  confirmLabel = 'Delete',
+  busyLabel = 'Deleting…',
+  tone = 'danger',
+  busy = false,
+  onConfirm,
+  onCancel,
+}) {
   const cancelRef = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
@@ -98,8 +109,8 @@ export function ConfirmDialog({ open, title, children, confirmLabel = 'Delete', 
           <button ref={cancelRef} className="btn" onClick={onCancel} disabled={busy}>
             Cancel
           </button>
-          <button className="btn btn-danger" onClick={onConfirm} disabled={busy}>
-            {busy ? 'Deleting…' : confirmLabel}
+          <button className={`btn ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm} disabled={busy}>
+            {busy ? busyLabel : confirmLabel}
           </button>
         </div>
       </div>

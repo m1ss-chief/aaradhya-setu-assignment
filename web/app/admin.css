@@ -130,6 +130,8 @@ button.bl-row:hover .bl-bar { background: var(--terracotta-dark); }
 .modal-body { color: var(--maroon-soft); font-size: 15px; line-height: 1.5; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 @keyframes fade { from { opacity: 0; } }
+.status-change { display: flex; align-items: center; gap: 10px; font-size: 18px; color: var(--maroon-soft); }
+.warn-note { background: #fff3e3; border: 1px solid #f3d7b5; color: #7a4a12; border-radius: 12px; padding: 10px 12px; font-size: 14px; }
 
 /* ───────────────────────── Sign in (mirrors the aaradhyasetu.com sign-in screen) ───────────────────────── */
 .login-page { min-height: 100vh; display: flex; flex-direction: column; background: #f3eadf; }

@@ -26,6 +26,7 @@ function BookingDetails() {
   const [videoUrl, setVideoUrl] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [confirmAdvance, setConfirmAdvance] = useState(false);
   const [toast, setToast] = useState('');
 
   const load = () =>
@@ -74,6 +75,7 @@ function BookingDetails() {
   }, [booking, upcoming, videoUrl]);
 
   async function advance() {
+    setConfirmAdvance(false);
     setSaving(true);
     setError('');
     try {
@@ -168,8 +170,8 @@ function BookingDetails() {
                 )}
                 <button
                   className="btn btn-primary"
-                  onClick={advance}
-                  disabled={saving || (upcoming === 'Video Available' && !videoUrl)}
+                  onClick={() => setConfirmAdvance(true)}
+                  disabled={saving || (upcoming === 'Video Available' && !/^https?:\/\/\S+$/i.test(videoUrl))}
                 >
                   {saving ? 'Updating…' : `Move to "${upcoming}"`}
                 </button>
@@ -279,6 +281,37 @@ function BookingDetails() {
           {booking.createdBy && <>Created by {booking.createdBy}. </>}
           {booking.updatedBy && <>Last edited by {booking.updatedBy} on {formatDate(booking.updatedAt, true)}.</>}
         </p>
+      )}
+
+      {upcoming && (
+        <ConfirmDialog
+          open={confirmAdvance}
+          title={`Move ${booking.bookingId} to "${upcoming}"?`}
+          tone="primary"
+          confirmLabel={preview ? 'Yes, update & send' : 'Yes, update status'}
+          busyLabel="Updating…"
+          busy={saving}
+          onCancel={() => setConfirmAdvance(false)}
+          onConfirm={advance}
+        >
+          <p className="status-change">
+            <StatusBadge status={booking.status} /> <span aria-hidden>→</span> <StatusBadge status={upcoming} />
+          </p>
+          {preview && (
+            <>
+              <p>
+                {booking.devoteeName} will get this WhatsApp message at <b>{booking.phone}</b>:
+              </p>
+              <div className="chat">
+                <div className="bubble preview">{preview}</div>
+              </div>
+            </>
+          )}
+          <p className="warn-note">
+            <b>This can't be rolled back.</b> Bookings only move forward, and a message that has been sent can't be
+            taken back.
+          </p>
+        </ConfirmDialog>
       )}
 
       <ConfirmDialog
