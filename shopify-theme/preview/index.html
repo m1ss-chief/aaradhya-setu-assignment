@@ -1,0 +1,146 @@
+<!doctype html>
+<!--
+  Static preview of sections/aaradhya-puja-product.liquid with sample data,
+  so the page can be demoed without a Shopify store. It loads the SAME css/js
+  assets as the theme; `data-preview` makes Add to Cart simulate the cart call.
+  Open with any static server, e.g.  npx serve shopify-theme   then /preview/
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rudrabhishek at Kashi Vishwanath · Aaradhya Setu (preview)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/aaradhya-puja-product.css">
+  <style>
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #fff8f0; }
+    .demo-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px clamp(16px, 4vw, 40px); border-bottom: 1px solid #f0dfcc; background: #fff8f0; color: #3a1e22; }
+    .demo-header strong { font-family: 'Bricolage Grotesque', sans-serif; font-size: 20px; }
+    .demo-header nav { display: flex; gap: 18px; font-weight: 500; }
+    .demo-header a { color: inherit; text-decoration: none; }
+    .demo-note { background: #3a1e22; color: #fff; text-align: center; font-size: 13px; padding: 6px 12px; }
+    @media (max-width: 640px) { .demo-header nav a:not(:last-child) { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="demo-note">Preview of the Shopify section with sample data · Add to Cart is simulated</div>
+  <header class="demo-header">
+    <strong>🪔 Aaradhya Setu</strong>
+    <nav><a href="#">Home</a><a href="#">Pujas</a><a href="#">Chadhava</a><a href="#">Cart (0)</a></nav>
+  </header>
+
+  <!-- Rendered output of the section for a sample product -->
+  <section class="asp" id="asp-preview" data-asp-section data-preview data-after-add="stay" data-cart-url="/cart" data-cart-add-url="/cart/add">
+    <div class="asp__grid page-width">
+      <div class="asp__media">
+        <div class="asp__main-image">
+          <img src="images/puja-main.svg" alt="Diya lit for Rudrabhishek" data-asp-main-image>
+          <span class="asp__badge">Verified temple pandits</span>
+        </div>
+        <ul class="asp__thumbs" role="list">
+          <li><button type="button" class="asp__thumb is-active" data-asp-thumb="images/puja-main.svg" aria-label="Show image 1 of 3"><img src="images/puja-main.svg" alt=""></button></li>
+          <li><button type="button" class="asp__thumb" data-asp-thumb="images/puja-temple.svg" aria-label="Show image 2 of 3"><img src="images/puja-temple.svg" alt=""></button></li>
+          <li><button type="button" class="asp__thumb" data-asp-thumb="images/puja-prasad.svg" aria-label="Show image 3 of 3"><img src="images/puja-prasad.svg" alt=""></button></li>
+        </ul>
+      </div>
+
+      <div class="asp__info">
+        <p class="asp__eyebrow">🛕 Kashi Vishwanath, Varanasi</p>
+        <h1 class="asp__title">Rudrabhishek</h1>
+        <div class="asp__price-row">
+          <span class="asp__price" data-asp-price>₹2,100</span>
+          <span class="asp__compare" data-asp-compare>₹2,500</span>
+          <span class="asp__price-note">incl. sankalp in your name</span>
+        </div>
+        <div class="asp__description rte">
+          <p>Rudrabhishek is the sacred abhishek of Lord Shiva with milk, honey, curd, ghee and Ganga jal, performed while chanting the Rudram. Our pandits at Kashi Vishwanath perform it on your chosen date with a sankalp in your name and gotra.</p>
+        </div>
+
+        <div class="asp__benefits">
+          <h2 class="asp__h2">Benefits of this puja</h2>
+          <ul role="list">
+            <li><span aria-hidden="true">🕉️</span> Performed by verified Vedic pandits at the temple, with sankalp in your name and gotra</li>
+            <li><span aria-hidden="true">🪔</span> Removes obstacles and brings peace, health and prosperity to your family</li>
+            <li><span aria-hidden="true">📹</span> Watch the full puja: video sent to your WhatsApp after completion</li>
+            <li><span aria-hidden="true">📦</span> Blessed prasad delivered to your home</li>
+          </ul>
+        </div>
+
+        <form id="asp-form-preview" class="asp__form" novalidate data-asp-form action="/cart/add" method="post">
+          <input type="hidden" name="id" value="1001" data-asp-variant-input>
+
+          <fieldset class="asp__fieldset">
+            <legend class="asp__label">Package</legend>
+            <div class="asp__pills">
+              <label class="asp__pill"><input type="radio" name="asp-option-preview-0" value="Individual" data-asp-option="0" checked><span>Individual</span></label>
+              <label class="asp__pill"><input type="radio" name="asp-option-preview-0" value="Couple" data-asp-option="0"><span>Couple</span></label>
+              <label class="asp__pill"><input type="radio" name="asp-option-preview-0" value="Family (up to 6)" data-asp-option="0"><span>Family (up to 6)</span></label>
+              <label class="asp__pill"><input type="radio" name="asp-option-preview-0" value="Grand Rudrabhishek" data-asp-option="0"><span>Grand Rudrabhishek</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="asp__fieldset asp__devotee">
+            <legend class="asp__label">Devotee details <small>(for the sankalp)</small></legend>
+            <div class="asp__fields">
+              <label class="asp__field"><span>Full name *</span><input type="text" name="properties[Devotee name]" autocomplete="name" required data-asp-required></label>
+              <label class="asp__field"><span>WhatsApp number *</span><input type="tel" name="properties[WhatsApp number]" autocomplete="tel" inputmode="tel" pattern="^\+?[0-9 ]{10,15}$" required data-asp-required></label>
+              <label class="asp__field"><span>Gotra</span><input type="text" name="properties[Gotra]" placeholder="Optional"></label>
+              <label class="asp__field"><span>Puja date *</span><input type="date" name="properties[Puja date]" required data-asp-required data-asp-date></label>
+            </div>
+            <input type="hidden" name="properties[Temple]" value="Kashi Vishwanath, Varanasi">
+          </fieldset>
+
+          <fieldset class="asp__fieldset">
+            <legend class="asp__label">Add an offering <small>(optional)</small></legend>
+            <div class="asp__addons">
+              <label class="asp__addon"><input type="checkbox" data-asp-addon data-variant-id="2001" data-price="25100" data-title="Diya &amp; Chunari offering"><img class="asp__addon-img" src="images/addon-diya.svg" alt=""><span class="asp__addon-text"><strong>Diya &amp; Chunari offering</strong><small>Offered at the sanctum on your behalf</small></span><span class="asp__addon-price">+₹251</span></label>
+              <label class="asp__addon"><input type="checkbox" data-asp-addon data-variant-id="2002" data-price="15100" data-title="Gau Seva"><img class="asp__addon-img" src="images/addon-cow.svg" alt=""><span class="asp__addon-text"><strong>Gau Seva</strong><small>Feed cows at the temple goshala</small></span><span class="asp__addon-price">+₹151</span></label>
+              <label class="asp__addon"><input type="checkbox" data-asp-addon data-variant-id="2003" data-price="35100" data-title="Prasad box (extra)"><img class="asp__addon-img" src="images/addon-prasad.svg" alt=""><span class="asp__addon-text"><strong>Prasad box (extra)</strong><small>A second prasad box for family</small></span><span class="asp__addon-price">+₹351</span></label>
+            </div>
+          </fieldset>
+
+          <div class="asp__buy">
+            <div class="asp__qty" role="group" aria-label="Quantity">
+              <button type="button" data-asp-qty="-1" aria-label="Decrease quantity">−</button>
+              <input type="number" name="quantity" value="1" min="1" max="10" data-asp-qty-input aria-label="Quantity">
+              <button type="button" data-asp-qty="1" aria-label="Increase quantity">+</button>
+            </div>
+            <button type="submit" name="add" class="asp__cta" data-asp-submit><span data-asp-cta-label>Add to Cart · <span data-asp-total>₹2,100</span></span></button>
+          </div>
+          <p class="asp__message" role="status" aria-live="polite" data-asp-message></p>
+        </form>
+
+        <ul class="asp__trust" role="list">
+          <li>🛕 120+ verified temples</li>
+          <li>🎥 Puja video on WhatsApp</li>
+          <li>🔒 Secure payments</li>
+          <li>🙏 Sankalp in your name and gotra</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="asp__sticky" data-asp-sticky aria-hidden="true">
+      <div><strong>Rudrabhishek</strong><span data-asp-sticky-total>₹2,100</span></div>
+      <button type="submit" form="asp-form-preview" class="asp__cta" tabindex="-1">Add to Cart</button>
+    </div>
+
+    <!-- What {{ product | json }} outputs, trimmed to the fields the script uses. Prices are in paise. -->
+    <script type="application/json" data-asp-product>
+      {
+        "id": 1,
+        "title": "Rudrabhishek",
+        "options": ["Package"],
+        "variants": [
+          { "id": 1001, "title": "Individual", "options": ["Individual"], "price": 210000, "compare_at_price": 250000, "available": true },
+          { "id": 1002, "title": "Couple", "options": ["Couple"], "price": 310000, "compare_at_price": 350000, "available": true },
+          { "id": 1003, "title": "Family (up to 6)", "options": ["Family (up to 6)"], "price": 510000, "compare_at_price": null, "available": true },
+          { "id": 1004, "title": "Grand Rudrabhishek", "options": ["Grand Rudrabhishek"], "price": 1100000, "compare_at_price": null, "available": false }
+        ]
+      }
+    </script>
+  </section>
+
+  <script src="../assets/aaradhya-puja-product.js" defer></script>
+</body>
+</html>

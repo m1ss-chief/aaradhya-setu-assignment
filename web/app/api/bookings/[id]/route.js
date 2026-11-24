@@ -1,0 +1,32 @@
+import { NextResponse } from 'next/server';
+import { mongoRepo } from '../../../../lib/repo/mongo-repo.js';
+import { getBooking, listNotifications, updateBooking, deleteBooking } from '../../../../lib/bookings-service.js';
+import { currentAdmin } from '../../../../lib/current-admin.js';
+import { handle } from '../../../../lib/http.js';
+
+export const dynamic = 'force-dynamic';
+
+// GET /api/bookings/AS-2026-0001  -> the booking plus its notification history
+export const GET = handle(async (_request, { params }) => {
+  const { id } = await params;
+  const [booking, notifications] = await Promise.all([
+    getBooking(mongoRepo, id),
+    listNotifications(mongoRepo, { bookingId: id }),
+  ]);
+  return NextResponse.json({ booking, notifications });
+});
+
+// PUT /api/bookings/AS-2026-0001  { devoteeName?, phone?, email?, gotra?, pujaName?, templeName?, pujaDate?, amount? }
+// Edits booking details. Status changes go through /status so the devotee is notified.
+export const PUT = handle(async (request, { params }) => {
+  const { id } = await params;
+  const admin = await currentAdmin();
+  const booking = await updateBooking(mongoRepo, id, await request.json(), { by: admin?.name });
+  return NextResponse.json({ booking });
+});
+
+// DELETE /api/bookings/AS-2026-0001  -> removes the booking and its notification history
+export const DELETE = handle(async (_request, { params }) => {
+  const { id } = await params;
+  return NextResponse.json(await deleteBooking(mongoRepo, id));
+});

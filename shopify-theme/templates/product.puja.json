@@ -1,0 +1,32 @@
+{
+  "sections": {
+    "main": {
+      "type": "aaradhya-puja-product",
+      "blocks": {
+        "benefit_1": { "type": "benefit", "settings": { "icon": "🕉️", "text": "Performed by verified Vedic pandits at the temple, with sankalp in your name and gotra" } },
+        "benefit_2": { "type": "benefit", "settings": { "icon": "🪔", "text": "Removes obstacles and brings peace, health and prosperity to your family" } },
+        "benefit_3": { "type": "benefit", "settings": { "icon": "📹", "text": "Watch the full puja: video sent to your WhatsApp after completion" } },
+        "benefit_4": { "type": "benefit", "settings": { "icon": "📦", "text": "Blessed prasad delivered to your home" } },
+        "addon_1": { "type": "addon", "settings": { "product": "", "label": "Diya & Chunari offering", "description": "Offered at the sanctum on your behalf" } },
+        "addon_2": { "type": "addon", "settings": { "product": "", "label": "Gau Seva", "description": "Feed cows at the temple goshala" } },
+        "addon_3": { "type": "addon", "settings": { "product": "", "label": "Prasad box (extra)", "description": "A second prasad box for family" } },
+        "trust_1": { "type": "trust", "settings": { "text": "🛕 120+ verified temples" } },
+        "trust_2": { "type": "trust", "settings": { "text": "🎥 Puja video on WhatsApp" } },
+        "trust_3": { "type": "trust", "settings": { "text": "🔒 Secure payments" } },
+        "trust_4": { "type": "trust", "settings": { "text": "🙏 Sankalp in your name and gotra" } }
+      },
+      "block_order": ["benefit_1", "benefit_2", "benefit_3", "benefit_4", "addon_1", "addon_2", "addon_3", "trust_1", "trust_2", "trust_3", "trust_4"],
+      "settings": {
+        "accent_color": "#C5532F",
+        "secondary_color": "#E08A2B",
+        "badge_text": "Verified temple pandits",
+        "price_note": "incl. sankalp in your name",
+        "benefits_heading": "Benefits of this puja",
+        "addons_heading": "Add an offering",
+        "max_quantity": 10,
+        "after_add": "stay"
+      }
+    }
+  },
+  "order": ["main"]
+}

@@ -1,0 +1,275 @@
+{%- comment -%}
+  Aaradhya Setu · Custom Puja product page (Online Store 2.0 section)
+
+  Shows: image gallery, temple + title, price, description, benefits,
+  puja package picker (variants), devotee details (sent as line item
+  properties so the booking dashboard can create the booking), optional
+  offering add-ons, quantity selector, live total and Add to Cart.
+
+  Works without JavaScript (plain form post for the main puja); with JS it
+  adds the selected add-ons in the same request through /cart/add.js.
+{%- endcomment -%}
+
+{{ 'aaradhya-puja-product.css' | asset_url | stylesheet_tag }}
+
+{%- liquid
+  assign current_variant = product.selected_or_first_available_variant
+  assign form_id = 'asp-form-' | append: section.id
+  assign benefit_blocks = section.blocks | where: 'type', 'benefit'
+  assign addon_blocks = section.blocks | where: 'type', 'addon'
+  assign trust_blocks = section.blocks | where: 'type', 'trust'
+-%}
+
+<section
+  class="asp"
+  id="asp-{{ section.id }}"
+  data-asp-section
+  data-after-add="{{ section.settings.after_add }}"
+  data-cart-url="{{ routes.cart_url }}"
+  data-cart-add-url="{{ routes.cart_add_url }}"
+  data-money-format="{{ shop.money_format | escape }}"
+  style="--asp-accent: {{ section.settings.accent_color }}; --asp-accent-2: {{ section.settings.secondary_color }};"
+>
+  <div class="asp__grid page-width">
+    {%- comment -%} Gallery {%- endcomment -%}
+    <div class="asp__media">
+      <div class="asp__main-image">
+        {%- if product.featured_media -%}
+          {%- assign main_alt = product.featured_media.alt | default: product.title -%}
+          {{ product.featured_media | image_url: width: 1200 | image_tag:
+            loading: 'eager', sizes: '(min-width: 990px) 50vw, 100vw', widths: '400, 600, 800, 1000, 1200',
+            data-asp-main-image: true, alt: main_alt
+          }}
+        {%- else -%}
+          {{ 'product-1' | placeholder_svg_tag: 'asp__placeholder' }}
+        {%- endif -%}
+        {%- if section.settings.badge_text != blank -%}
+          <span class="asp__badge">{{ section.settings.badge_text }}</span>
+        {%- endif -%}
+      </div>
+      {%- if product.media.size > 1 -%}
+        <ul class="asp__thumbs" role="list">
+          {%- for media in product.media -%}
+            {%- if media.media_type == 'image' -%}
+              {%- assign thumb_alt = media.alt | default: product.title -%}
+              <li>
+                <button
+                  type="button"
+                  class="asp__thumb{% if forloop.first %} is-active{% endif %}"
+                  data-asp-thumb="{{ media | image_url: width: 1200 }}"
+                  aria-label="Show image {{ forloop.index }} of {{ product.media.size }}"
+                >
+                  {{ media | image_url: width: 160 | image_tag: loading: 'lazy', alt: thumb_alt }}
+                </button>
+              </li>
+            {%- endif -%}
+          {%- endfor -%}
+        </ul>
+      {%- endif -%}
+    </div>
+
+    {%- comment -%} Details + booking form {%- endcomment -%}
+    <div class="asp__info">
+      <p class="asp__eyebrow">🛕 {{ product.vendor }}</p>
+      <h1 class="asp__title">{{ product.title }}</h1>
+
+      <div class="asp__price-row">
+        <span class="asp__price" data-asp-price>{{ current_variant.price | money }}</span>
+        <span class="asp__compare" data-asp-compare {% unless current_variant.compare_at_price > current_variant.price %}hidden{% endunless %}>
+          {{ current_variant.compare_at_price | money }}
+        </span>
+        <span class="asp__price-note">{{ section.settings.price_note }}</span>
+      </div>
+
+      <div class="asp__description rte">{{ product.description }}</div>
+
+      {%- if benefit_blocks.size > 0 or product.metafields.custom.benefits.value != blank -%}
+        <div class="asp__benefits">
+          <h2 class="asp__h2">{{ section.settings.benefits_heading }}</h2>
+          <ul role="list">
+            {%- if benefit_blocks.size > 0 -%}
+              {%- for block in benefit_blocks -%}
+                <li {{ block.shopify_attributes }}><span aria-hidden="true">{{ block.settings.icon }}</span> {{ block.settings.text }}</li>
+              {%- endfor -%}
+            {%- else -%}
+              {%- for benefit in product.metafields.custom.benefits.value -%}
+                <li><span aria-hidden="true">✨</span> {{ benefit }}</li>
+              {%- endfor -%}
+            {%- endif -%}
+          </ul>
+        </div>
+      {%- endif -%}
+
+      {%- form 'product', product, id: form_id, class: 'asp__form', novalidate: 'novalidate', data-asp-form: '' -%}
+        <input type="hidden" name="id" value="{{ current_variant.id }}" data-asp-variant-input>
+
+        {%- unless product.has_only_default_variant -%}
+          {%- for option in product.options_with_values -%}
+            <fieldset class="asp__fieldset">
+              <legend class="asp__label">{{ option.name }}</legend>
+              <div class="asp__pills">
+                {%- for value in option.values -%}
+                  <label class="asp__pill">
+                    <input
+                      type="radio"
+                      name="asp-option-{{ section.id }}-{{ forloop.parentloop.index0 }}"
+                      value="{{ value | escape }}"
+                      data-asp-option="{{ forloop.parentloop.index0 }}"
+                      {% if option.selected_value == value %}checked{% endif %}
+                    >
+                    <span>{{ value }}</span>
+                  </label>
+                {%- endfor -%}
+              </div>
+            </fieldset>
+          {%- endfor -%}
+        {%- endunless -%}
+
+        <fieldset class="asp__fieldset asp__devotee">
+          <legend class="asp__label">Devotee details <small>(for the sankalp)</small></legend>
+          <div class="asp__fields">
+            <label class="asp__field">
+              <span>Full name *</span>
+              <input type="text" name="properties[Devotee name]" autocomplete="name" required data-asp-required>
+            </label>
+            <label class="asp__field">
+              <span>WhatsApp number *</span>
+              <input type="tel" name="properties[WhatsApp number]" autocomplete="tel" inputmode="tel" pattern="^\+?[0-9 ]{10,15}$" required data-asp-required>
+            </label>
+            <label class="asp__field">
+              <span>Gotra</span>
+              <input type="text" name="properties[Gotra]" placeholder="Optional">
+            </label>
+            <label class="asp__field">
+              <span>Puja date *</span>
+              <input type="date" name="properties[Puja date]" required data-asp-required data-asp-date>
+            </label>
+          </div>
+          <input type="hidden" name="properties[Temple]" value="{{ product.vendor | escape }}">
+        </fieldset>
+
+        {%- if addon_blocks.size > 0 -%}
+          <fieldset class="asp__fieldset">
+            <legend class="asp__label">{{ section.settings.addons_heading }} <small>(optional)</small></legend>
+            <div class="asp__addons">
+              {%- for block in addon_blocks -%}
+                {%- assign addon = block.settings.product -%}
+                {%- if addon != blank and addon.selected_or_first_available_variant.available -%}
+                  {%- assign addon_variant = addon.selected_or_first_available_variant -%}
+                  <label class="asp__addon" {{ block.shopify_attributes }}>
+                    <input
+                      type="checkbox"
+                      data-asp-addon
+                      data-variant-id="{{ addon_variant.id }}"
+                      data-price="{{ addon_variant.price }}"
+                      data-title="{{ addon.title | escape }}"
+                    >
+                    {%- if addon.featured_image -%}
+                      {{ addon.featured_image | image_url: width: 120 | image_tag: loading: 'lazy', class: 'asp__addon-img', alt: '' }}
+                    {%- endif -%}
+                    <span class="asp__addon-text">
+                      <strong>{{ block.settings.label | default: addon.title }}</strong>
+                      {%- if block.settings.description != blank -%}<small>{{ block.settings.description }}</small>{%- endif -%}
+                    </span>
+                    <span class="asp__addon-price">+{{ addon_variant.price | money }}</span>
+                  </label>
+                {%- endif -%}
+              {%- endfor -%}
+            </div>
+          </fieldset>
+        {%- endif -%}
+
+        <div class="asp__buy">
+          <div class="asp__qty" role="group" aria-label="Quantity">
+            <button type="button" data-asp-qty="-1" aria-label="Decrease quantity">−</button>
+            <input type="number" name="quantity" value="1" min="1" max="{{ section.settings.max_quantity }}" data-asp-qty-input aria-label="Quantity">
+            <button type="button" data-asp-qty="1" aria-label="Increase quantity">+</button>
+          </div>
+          <button
+            type="submit"
+            name="add"
+            class="asp__cta"
+            data-asp-submit
+            {% unless current_variant.available %}disabled{% endunless %}
+          >
+            <span data-asp-cta-label>{% if current_variant.available %}Add to Cart · <span data-asp-total>{{ current_variant.price | money }}</span>{% else %}Sold out{% endif %}</span>
+          </button>
+        </div>
+        <p class="asp__message" role="status" aria-live="polite" data-asp-message></p>
+      {%- endform -%}
+
+      {%- if trust_blocks.size > 0 -%}
+        <ul class="asp__trust" role="list">
+          {%- for block in trust_blocks -%}
+            <li {{ block.shopify_attributes }}>{{ block.settings.text }}</li>
+          {%- endfor -%}
+        </ul>
+      {%- endif -%}
+    </div>
+  </div>
+
+  <div class="asp__sticky" data-asp-sticky aria-hidden="true">
+    <div>
+      <strong>{{ product.title }}</strong>
+      <span data-asp-sticky-total>{{ current_variant.price | money }}</span>
+    </div>
+    <button type="submit" form="{{ form_id }}" class="asp__cta" tabindex="-1">Add to Cart</button>
+  </div>
+
+  <script type="application/json" data-asp-product>{{ product | json }}</script>
+</section>
+
+<script src="{{ 'aaradhya-puja-product.js' | asset_url }}" defer="defer"></script>
+
+{% schema %}
+{
+  "name": "Puja product page",
+  "tag": "div",
+  "class": "section-aaradhya-puja",
+  "settings": [
+    { "type": "color", "id": "accent_color", "label": "Accent colour", "default": "#C5532F" },
+    { "type": "color", "id": "secondary_color", "label": "Secondary colour", "default": "#E08A2B" },
+    { "type": "text", "id": "badge_text", "label": "Image badge", "default": "Verified temple pandits" },
+    { "type": "text", "id": "price_note", "label": "Text next to price", "default": "incl. sankalp in your name" },
+    { "type": "text", "id": "benefits_heading", "label": "Benefits heading", "default": "Benefits of this puja" },
+    { "type": "text", "id": "addons_heading", "label": "Add-ons heading", "default": "Add an offering" },
+    { "type": "range", "id": "max_quantity", "label": "Maximum quantity", "min": 1, "max": 20, "step": 1, "default": 10 },
+    {
+      "type": "select",
+      "id": "after_add",
+      "label": "After Add to Cart",
+      "options": [
+        { "value": "stay", "label": "Stay on page and show a message" },
+        { "value": "cart", "label": "Go to the cart" }
+      ],
+      "default": "stay"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "benefit",
+      "name": "Benefit",
+      "settings": [
+        { "type": "text", "id": "icon", "label": "Icon (emoji)", "default": "✨" },
+        { "type": "text", "id": "text", "label": "Text", "default": "Brings peace and prosperity to the family" }
+      ]
+    },
+    {
+      "type": "addon",
+      "name": "Offering add-on",
+      "limit": 6,
+      "settings": [
+        { "type": "product", "id": "product", "label": "Add-on product" },
+        { "type": "text", "id": "label", "label": "Label (optional)" },
+        { "type": "text", "id": "description", "label": "Short description" }
+      ]
+    },
+    {
+      "type": "trust",
+      "name": "Trust point",
+      "settings": [{ "type": "text", "id": "text", "label": "Text", "default": "🎥 Video of your puja on WhatsApp" }]
+    }
+  ],
+  "presets": [{ "name": "Puja product page" }]
+}
+{% endschema %}
