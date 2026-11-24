@@ -4,7 +4,7 @@
 
 const DEVOTEES = [
   ['Ananya Sharma', '+91 98765 43210'], ['Rohit Verma', '+91 98111 22334'], ['Priya Iyer', '+91 99000 11223'],
-  ['Karan Mehta', '+91 97654 32109'], ['Sneha Reddy', '+91 90000 54321'], ['Arjun Nair', '+91 93456 78901'],
+  ['Karan Mehta', '+91 97654 32109'], ['Sneha Reddy', '+91 90000 54321'], ['Arjun Nair', '+91 93456 7890'],
   ['Kavya Joshi', '+91 98989 89898'], ['Vikram Singh', '+91 91234 56789'], ['Meera Pillai', '+91 94444 33221'],
   ['Aditya Kulkarni', '+91 95555 12345'], ['Pooja Agarwal', '+91 96666 98765'], ['Rahul Gupta', '+91 97777 45678'],
   ['Divya Menon', '+91 98888 23456'], ['Suresh Patel', '+91 99999 87654'], ['Neha Chauhan', '+91 90123 45678'],

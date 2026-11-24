@@ -5,11 +5,13 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import BookingForm from '@/components/booking-form.js';
 import { Icon } from '@/components/icons.js';
+import { useAdmin, NoAccess } from '@/components/admin-context.js';
 import { StatusBadge, ErrorNote, api } from '@/components/ui.js';
 
 export default function EditBookingPage() {
   const { id } = useParams();
   const router = useRouter();
+  const { can } = useAdmin();
   const [booking, setBooking] = useState(null);
   const [error, setError] = useState('');
 
@@ -23,6 +25,8 @@ export default function EditBookingPage() {
     await api(`/api/bookings/${id}`, { method: 'PUT', body: JSON.stringify(changes) });
     router.push(`/bookings/${id}?saved=1`);
   }
+
+  if (!can('bookings:edit')) return <NoAccess what="edit bookings" />;
 
   return (
     <div className="narrow">

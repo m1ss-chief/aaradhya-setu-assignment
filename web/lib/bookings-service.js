@@ -1,10 +1,22 @@
-// Business logic for bookings and notifications.
+// Business logic for bookings, notifications and message templates.
 //
 // Every function takes a `repo` (the data layer) as its first argument. The app
 // passes the MongoDB repo; the tests pass an in-memory one. That keeps the rules
 // (search, filters, status changes, notifications) testable without a database.
 
-import { STATUSES, canTransition, nextStatus, messageForStatus } from './workflow.js';
+import {
+  STATUSES,
+  ALL_STATUSES,
+  CANCELLED,
+  CANCELLABLE_STATUSES,
+  TEMPLATES,
+  TEMPLATE_STATUSES,
+  TEMPLATE_RULES,
+  placeholdersIn,
+  canTransition,
+  nextStatus,
+  messageForStatus,
+} from './workflow.js';
 import { sendWhatsAppMock } from './notifier.js';
 
 export class ServiceError extends Error {
@@ -21,6 +33,9 @@ const SORT_FIELDS = {
   created: 'createdAt',
   bookingId: 'bookingId',
 };
+
+export const DEFAULT_PAGE_SIZE = 10;
+export const MAX_PAGE_SIZE = 100;
 
 function escapeRegex(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -40,7 +55,7 @@ export function buildBookingQuery({ q, status, puja, from, to } = {}) {
     ];
   }
   if (status && status !== 'all') {
-    if (!STATUSES.includes(status)) throw new ServiceError(`Unknown status "${status}"`);
+    if (!ALL_STATUSES.includes(status)) throw new ServiceError(`Unknown status "${status}"`);
     query.status = status;
   }
   if (puja && puja !== 'all') query.pujaName = puja;
@@ -52,13 +67,46 @@ export function buildBookingQuery({ q, status, puja, from, to } = {}) {
   return query;
 }
 
+// The booking ID is a tie-breaker so paging is stable when many rows share a date or amount.
 export function buildSort({ sort = 'date', order = 'desc' } = {}) {
   const field = SORT_FIELDS[sort] || SORT_FIELDS.date;
-  return { [field]: order === 'asc' ? 1 : -1 };
+  const dir = order === 'asc' ? 1 : -1;
+  return field === 'bookingId' ? { bookingId: dir } : { [field]: dir, bookingId: dir };
 }
 
+export function parsePaging({ page, pageSize } = {}) {
+  const size = Math.min(MAX_PAGE_SIZE, Math.max(1, Number.parseInt(pageSize, 10) || DEFAULT_PAGE_SIZE));
+  const p = Math.max(1, Number.parseInt(page, 10) || 1);
+  return { page: p, pageSize: size };
+}
+
+// Server-side pagination: the database returns one page plus the total count,
+// so the dashboard stays fast however many bookings there are.
 export async function listBookings(repo, params = {}) {
+  const query = buildBookingQuery(params);
+  const { page, pageSize } = parsePaging(params);
+  const total = await repo.countBookings(query);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const current = Math.min(page, pages);
+  const bookings = await repo.findBookings(query, buildSort(params), { skip: (current - 1) * pageSize, limit: pageSize });
+  return { bookings, total, page: current, pageSize, pages };
+}
+
+// Every matching booking (no paging), for CSV export.
+export async function exportBookings(repo, params = {}) {
   return repo.findBookings(buildBookingQuery(params), buildSort(params));
+}
+
+const CSV_COLUMNS = ['bookingId', 'devoteeName', 'phone', 'email', 'gotra', 'pujaName', 'templeName', 'pujaDate', 'amount', 'status', 'cancelReason', 'source', 'createdAt'];
+
+export function bookingsToCsv(bookings) {
+  const cell = (v) => {
+    const text = v instanceof Date ? v.toISOString() : String(v ?? '');
+    // Prefix formula-like values so spreadsheets don't execute them.
+    const safe = /^[=+\-@]/.test(text) && !/^\+?\d[\d\s]*$/.test(text) ? `'${text}` : text;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  return [CSV_COLUMNS.join(','), ...bookings.map((b) => CSV_COLUMNS.map((c) => cell(b[c])).join(','))].join('\n');
 }
 
 export async function getBooking(repo, bookingId) {
@@ -141,11 +189,76 @@ export async function updateBooking(repo, bookingId, input = {}, { by } = {}) {
   return updated;
 }
 
-// Permanently removes a booking and its notification history.
+// Permanently removes a booking and its notification history (owner only).
+// Day-to-day, bookings should be cancelled instead, which keeps the record.
 export async function deleteBooking(repo, bookingId) {
   await getBooking(repo, bookingId);
   const notificationsDeleted = await repo.deleteBooking(bookingId);
   return { bookingId, notificationsDeleted };
+}
+
+// ───────────────────────── Message templates ─────────────────────────
+
+// Defaults from workflow.js, overridden by whatever owners saved in Settings.
+export async function getTemplates(repo) {
+  const saved = await repo.findTemplates();
+  const merged = { ...TEMPLATES };
+  const meta = {};
+  for (const t of saved) {
+    if (TEMPLATE_STATUSES.includes(t.status)) {
+      merged[t.status] = t.body;
+      meta[t.status] = { updatedBy: t.updatedBy, updatedAt: t.updatedAt };
+    }
+  }
+  return { templates: merged, meta };
+}
+
+export function validateTemplate(status, body) {
+  if (!TEMPLATE_STATUSES.includes(status)) throw new ServiceError(`There is no message template for "${status}"`, 404);
+  const text = String(body ?? '').trim();
+  if (!text) throw new ServiceError('The message cannot be empty');
+  if (text.length > 1000) throw new ServiceError('Keep the message under 1000 characters');
+  const used = placeholdersIn(text);
+  const { allowed, required } = TEMPLATE_RULES[status];
+  const unknown = [...new Set(used.filter((p) => !allowed.includes(p)))];
+  if (unknown.length) {
+    throw new ServiceError(`Unknown placeholder(s): ${unknown.map((p) => `{{${p}}}`).join(', ')}. You can use: ${allowed.map((p) => `{{${p}}}`).join(', ')}`);
+  }
+  const missing = required.filter((p) => !used.includes(p));
+  if (missing.length) throw new ServiceError(`The message must include ${missing.map((p) => `{{${p}}}`).join(', ')}`);
+  if (/\{\{|\}\}/.test(text.replace(/\{\{\s*\w+\s*\}\}/g, ''))) throw new ServiceError('A placeholder is not closed properly, e.g. {{devoteeName}}');
+  return text;
+}
+
+export async function saveTemplate(repo, status, body, { by } = {}) {
+  const text = validateTemplate(status, body);
+  await repo.upsertTemplate({ status, body: text, updatedBy: by, updatedAt: new Date() });
+  return getTemplates(repo);
+}
+
+export async function resetTemplate(repo, status) {
+  validateTemplate(status, TEMPLATES[status]);
+  await repo.deleteTemplate(status);
+  return getTemplates(repo);
+}
+
+// ───────────────────────── Workflow & notifications ─────────────────────────
+
+async function notify(repo, booking, status, at, templates) {
+  const message = messageForStatus(status, booking, templates);
+  if (!message) return null;
+  const delivery = await sendWhatsAppMock({ to: booking.phone, message });
+  return repo.createNotification({
+    bookingId: booking.bookingId,
+    status,
+    channel: 'whatsapp',
+    to: booking.phone,
+    devoteeName: booking.devoteeName,
+    message,
+    delivery,
+    attempts: 1,
+    createdAt: at,
+  });
 }
 
 // Moves a booking one step forward and, for every step that has a template,
@@ -155,7 +268,9 @@ export async function changeStatus(repo, bookingId, to, { videoUrl, note, by, at
   const booking = await getBooking(repo, bookingId);
   const from = booking.status;
 
+  if (to === CANCELLED) throw new ServiceError('Use "Cancel booking" to cancel, so a reason is recorded');
   if (!STATUSES.includes(to)) throw new ServiceError(`Unknown status "${to}"`);
+  if (from === CANCELLED) throw new ServiceError('This booking was cancelled and cannot move forward', 409);
   if (!canTransition(from, to)) {
     const allowed = nextStatus(from);
     throw new ServiceError(
@@ -164,11 +279,12 @@ export async function changeStatus(repo, bookingId, to, { videoUrl, note, by, at
     );
   }
   if (to === 'Video Available') {
-    if (!videoUrl || !/^https?:\/\//i.test(videoUrl)) {
+    if (!videoUrl || !/^https?:\/\/\S+$/i.test(videoUrl)) {
       throw new ServiceError('A valid video link (http/https) is required to mark the video as available');
     }
   }
 
+  const { templates } = await getTemplates(repo);
   const at = atOverride ? new Date(atOverride) : new Date();
   const changes = { status: to, ...(to === 'Video Available' ? { videoUrl } : {}) };
   const historyEntry = { status: to, at, ...(note ? { note } : {}), ...(by ? { by } : {}) };
@@ -179,59 +295,97 @@ export async function changeStatus(repo, bookingId, to, { videoUrl, note, by, at
   const updated = await repo.updateBookingStatus(bookingId, from, changes, historyEntry);
   if (!updated) throw new ServiceError('This booking was just updated by someone else. Refresh and try again.', 409);
 
-  let notification = null;
-  const message = messageForStatus(to, updated);
-  if (message) {
-    const delivery = await sendWhatsAppMock({ to: updated.phone, message });
-    notification = await repo.createNotification({
-      bookingId: updated.bookingId,
-      status: to,
-      channel: 'whatsapp',
-      to: updated.phone,
-      devoteeName: updated.devoteeName,
-      message,
-      delivery,
-      createdAt: at,
-    });
-  }
+  const notification = await notify(repo, updated, to, at, templates);
   return { booking: updated, notification };
 }
 
-export async function listNotifications(repo, { bookingId, status } = {}) {
+// Cancels a booking that has not been completed yet. The booking and its history
+// are kept (unlike delete); the devotee is messaged only if `notifyDevotee` is set.
+export async function cancelBooking(repo, bookingId, { reason, notifyDevotee = false, by, at: atOverride } = {}) {
+  const booking = await getBooking(repo, bookingId);
+  const from = booking.status;
+  if (!CANCELLABLE_STATUSES.includes(from)) {
+    throw new ServiceError(
+      from === CANCELLED ? 'This booking is already cancelled' : `A booking that is "${from}" can no longer be cancelled`,
+      409,
+    );
+  }
+  const why = String(reason ?? '').trim();
+  if (!why) throw new ServiceError('Please give a reason for the cancellation');
+  if (why.length > 300) throw new ServiceError('Keep the reason under 300 characters');
+
+  const at = atOverride ? new Date(atOverride) : new Date();
+  const changes = { status: CANCELLED, cancelReason: why, cancelledAt: at, ...(by ? { cancelledBy: by } : {}) };
+  const historyEntry = { status: CANCELLED, at, note: why, ...(by ? { by } : {}) };
+  const updated = await repo.updateBookingStatus(bookingId, from, changes, historyEntry);
+  if (!updated) throw new ServiceError('This booking was just updated by someone else. Refresh and try again.', 409);
+
+  const { templates } = notifyDevotee ? await getTemplates(repo) : { templates: null };
+  const notification = notifyDevotee ? await notify(repo, updated, CANCELLED, at, templates) : null;
+  return { booking: updated, notification };
+}
+
+// Sends a failed WhatsApp message again, to the booking's CURRENT number
+// (so fixing a mistyped number and pressing Resend works).
+export async function resendNotification(repo, notificationId, { by } = {}) {
+  const notification = await repo.findNotificationById(notificationId);
+  if (!notification) throw new ServiceError('Message not found', 404);
+  if (notification.delivery?.status !== 'failed') throw new ServiceError('Only failed messages can be resent', 409);
+  const booking = await repo.findBookingById(notification.bookingId);
+  const to = booking?.phone || notification.to;
+
+  const delivery = await sendWhatsAppMock({ to, message: notification.message });
+  const updated = await repo.updateNotification(notificationId, notification.delivery.status, {
+    to,
+    delivery,
+    attempts: (notification.attempts || 1) + 1,
+    lastAttemptAt: new Date(),
+    ...(by ? { lastAttemptBy: by } : {}),
+  });
+  if (!updated) throw new ServiceError('This message was just resent by someone else. Refresh to see it.', 409);
+  return updated;
+}
+
+export async function listNotifications(repo, { bookingId, status, delivery } = {}) {
   const query = {};
   if (bookingId) query.bookingId = bookingId;
   if (status && status !== 'all') query.status = status;
+  if (delivery === 'failed' || delivery === 'sent') query['delivery.status'] = delivery;
   return repo.findNotifications(query);
 }
 
+// ───────────────────────── Stats ─────────────────────────
+
+// Uses count / sum queries rather than loading every booking.
+// Cancelled bookings are counted, but not included in the booking value.
 export async function getStats(repo, now = new Date()) {
-  const bookings = await repo.findBookings({}, { pujaDate: 1 });
-  const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0]));
-  const byPuja = new Map();
-  let revenue = 0;
+  const counts = await Promise.all(ALL_STATUSES.map((s) => repo.countBookings({ status: s })));
+  const byStatus = Object.fromEntries(ALL_STATUSES.map((s, i) => [s, counts[i]]));
+  const total = counts.reduce((a, b) => a + b, 0);
+
+  const active = { status: { $ne: CANCELLED } };
+  const revenueByPuja = (await repo.sumByPuja(active)).sort((a, b) => b.revenue - a.revenue || a.puja.localeCompare(b.puja));
+  const revenue = revenueByPuja.reduce((sum, p) => sum + p.revenue, 0);
+  const activeCount = revenueByPuja.reduce((sum, p) => sum + p.count, 0);
+  const pujas = (await repo.distinctPujas()).sort();
+
   const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const upcoming = [];
-  for (const b of bookings) {
-    byStatus[b.status] = (byStatus[b.status] || 0) + 1;
-    const amount = Number(b.amount) || 0;
-    revenue += amount;
-    const p = byPuja.get(b.pujaName) || { puja: b.pujaName, revenue: 0, count: 0 };
-    p.revenue += amount;
-    p.count += 1;
-    byPuja.set(b.pujaName, p);
-    const date = new Date(b.pujaDate);
-    if (date >= now && date <= weekAhead && ['Pending', 'Confirmed'].includes(b.status)) upcoming.push(b);
-  }
-  const revenueByPuja = [...byPuja.values()].sort((a, b) => b.revenue - a.revenue);
+  const upcomingQuery = { status: { $in: ['Pending', 'Confirmed'] }, pujaDate: { $gte: now, $lte: weekAhead } };
+  const [upcomingCount, upcoming, failedMessages] = await Promise.all([
+    repo.countBookings(upcomingQuery),
+    repo.findBookings(upcomingQuery, { pujaDate: 1, bookingId: 1 }, { limit: 6 }),
+    repo.countNotifications({ 'delivery.status': 'failed' }),
+  ]);
+
   return {
-    total: bookings.length,
+    total,
     byStatus,
     revenue,
-    averageAmount: bookings.length ? Math.round(revenue / bookings.length) : 0,
-    pujas: revenueByPuja.map((p) => p.puja).sort(),
+    averageAmount: activeCount ? Math.round(revenue / activeCount) : 0,
+    pujas,
     revenueByPuja,
-    upcomingCount: upcoming.length,
-    upcoming: upcoming.slice(0, 6).map(({ bookingId, devoteeName, pujaName, templeName, pujaDate, status }) => ({
+    upcomingCount,
+    upcoming: upcoming.map(({ bookingId, devoteeName, pujaName, templeName, pujaDate, status }) => ({
       bookingId,
       devoteeName,
       pujaName,
@@ -239,8 +393,11 @@ export async function getStats(repo, now = new Date()) {
       pujaDate,
       status,
     })),
+    failedMessages,
   };
 }
+
+// ───────────────────────── Shopify ─────────────────────────
 
 // Shopify "orders/create" webhook -> one booking per puja line item.
 // Devotee details come from the line item properties the product page collects.

@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { STATUSES, STATUS_META } from '@/lib/workflow.js';
+import { ALL_STATUSES, STATUS_META } from '@/lib/workflow.js';
+import { useAdmin } from '@/components/admin-context.js';
 import { StatusBadge, BarList, formatINR, formatDate, ErrorNote, api } from '@/components/ui.js';
 import { Icon } from '@/components/icons.js';
 
@@ -14,6 +15,7 @@ function greeting() {
 
 export default function OverviewPage() {
   const router = useRouter();
+  const { can } = useAdmin();
   const [stats, setStats] = useState(null);
   const [admin, setAdmin] = useState(null);
   const [messages, setMessages] = useState(null);
@@ -27,7 +29,7 @@ export default function OverviewPage() {
 
   const kpis = [
     { label: 'Total bookings', value: stats?.total, icon: 'bookings', hint: 'All time' },
-    { label: 'Booking value', value: stats && formatINR(stats.revenue), icon: 'rupee', hint: stats ? `Avg ${formatINR(stats.averageAmount)} / booking` : '' },
+    { label: 'Booking value', value: stats && formatINR(stats.revenue), icon: 'rupee', hint: stats ? `Avg ${formatINR(stats.averageAmount)} · excl. cancelled` : '' },
     { label: 'Awaiting confirmation', value: stats?.byStatus.Pending, icon: 'clock', hint: 'Pending bookings', href: '/bookings?status=Pending', tone: stats?.byStatus.Pending ? 'attention' : '' },
     { label: 'Pujas in next 7 days', value: stats?.upcomingCount, icon: 'calendar', hint: 'Pending or confirmed' },
   ];
@@ -39,12 +41,27 @@ export default function OverviewPage() {
           <p className="eyebrow">{greeting()}{admin ? `, ${admin.name}` : ''} 🙏</p>
           <h1>Overview</h1>
         </div>
-        <Link href="/bookings/new" className="btn btn-primary">
-          <Icon name="plus" /> New booking
-        </Link>
+        {can('bookings:create') && (
+          <Link href="/bookings/new" className="btn btn-primary">
+            <Icon name="plus" /> New booking
+          </Link>
+        )}
       </div>
 
       <ErrorNote error={error} />
+
+      {stats?.failedMessages > 0 && (
+        <Link href="/notifications?delivery=failed" className="alert-banner">
+          <Icon name="alert" />
+          <span>
+            <b>
+              {stats.failedMessages} WhatsApp message{stats.failedMessages > 1 ? 's' : ''} not delivered.
+            </b>{' '}
+            Check the devotee's number and resend.
+          </span>
+          <Icon name="arrowRight" />
+        </Link>
+      )}
 
       <section className="kpis" aria-label="Key figures">
         {kpis.map((k) => {
@@ -81,7 +98,7 @@ export default function OverviewPage() {
           {stats ? (
             <BarList
               label="Bookings by workflow stage"
-              rows={STATUSES.map((s) => ({ label: `${s}`, value: stats.byStatus[s], title: `${STATUS_META[s].stage}: ${stats.byStatus[s]} booking(s)`, status: s }))}
+              rows={ALL_STATUSES.map((s) => ({ label: `${s}`, value: stats.byStatus[s], title: `${STATUS_META[s].stage}: ${stats.byStatus[s]} booking(s)`, status: s }))}
               format={(v) => v}
               onSelect={(r) => router.push(`/bookings?status=${encodeURIComponent(r.status)}`)}
             />

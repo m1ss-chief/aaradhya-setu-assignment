@@ -51,8 +51,8 @@ test('search query escapes special characters and filters by status/puja/date', 
   assert.equal(q.$or[0].bookingId.$regex, 'AS-2026 \\(1\\)');
   assert.ok(q.pujaDate.$gte instanceof Date);
   assert.throws(() => buildBookingQuery({ status: 'Teleported' }), /Unknown status/);
-  assert.deepEqual(buildSort({ sort: 'amount', order: 'asc' }), { amount: 1 });
-  assert.deepEqual(buildSort({ sort: 'nonsense' }), { pujaDate: -1 }, 'unknown sort falls back to date');
+  assert.deepEqual(buildSort({ sort: 'amount', order: 'asc' }), { amount: 1, bookingId: 1 }, 'booking ID breaks ties for stable paging');
+  assert.deepEqual(buildSort({ sort: 'nonsense' }), { pujaDate: -1, bookingId: -1 }, 'unknown sort falls back to date');
 });
 
 test('createBooking validates input and starts as Pending with sequential IDs', async () => {
@@ -107,20 +107,21 @@ test('two admins clicking at once cannot both advance the same booking', async (
 test('dashboard search, filters and sorting work on seeded data', async () => {
   const repo = createMemoryRepo();
   await seed(repo, new Date('2026-11-24T00:00:00Z'));
-  const all = await listBookings(repo, {});
+  const { bookings: all, total } = await listBookings(repo, { pageSize: 100 });
   assert.equal(all.length, 20);
+  assert.equal(total, 20);
 
-  const byName = await listBookings(repo, { q: 'ananya' });
+  const { bookings: byName } = await listBookings(repo, { q: 'ananya' });
   assert.equal(byName.length, 1);
   assert.equal(byName[0].devoteeName, 'Ananya Sharma');
 
-  const byId = await listBookings(repo, { q: all[0].bookingId });
+  const { bookings: byId } = await listBookings(repo, { q: all[0].bookingId });
   assert.equal(byId[0].bookingId, all[0].bookingId);
 
-  const confirmed = await listBookings(repo, { status: 'Confirmed' });
+  const { bookings: confirmed } = await listBookings(repo, { status: 'Confirmed' });
   assert.ok(confirmed.length > 0 && confirmed.every((b) => b.status === 'Confirmed'));
 
-  const cheapestFirst = await listBookings(repo, { sort: 'amount', order: 'asc' });
+  const { bookings: cheapestFirst } = await listBookings(repo, { sort: 'amount', order: 'asc', pageSize: 100 });
   for (let i = 1; i < cheapestFirst.length; i++) assert.ok(cheapestFirst[i - 1].amount <= cheapestFirst[i].amount);
 
   const stats = await getStats(repo);
@@ -128,7 +129,7 @@ test('dashboard search, filters and sorting work on seeded data', async () => {
   assert.equal(Object.values(stats.byStatus).reduce((a, b) => a + b, 0), 20);
   assert.ok(stats.revenue > 0);
 
-  const videos = await listBookings(repo, { status: 'Video Available' });
+  const { bookings: videos } = await listBookings(repo, { status: 'Video Available' });
   assert.ok(videos.every((b) => b.videoUrl && b.statusHistory.length === 5));
 });
 
@@ -158,5 +159,5 @@ test('a Shopify order becomes a booking, with add-ons included in the amount', a
   assert.equal(booking.amount, 2351);
   assert.equal(booking.addOns[0].name, 'Diya & Chunari offering');
   assert.equal(booking.shopifyOrderId, '5550001');
-  assert.equal((await listBookings(repo, {})).length, 1, 'add-on line is not a separate booking');
+  assert.equal((await listBookings(repo, {})).total, 1, 'add-on line is not a separate booking');
 });

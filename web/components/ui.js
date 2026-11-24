@@ -27,14 +27,25 @@ export function StatusBadge({ status }) {
 }
 
 // Horizontal workflow: Booking Received -> Confirmed -> Puja Started -> Puja Completed -> Video Available
+// For a cancelled booking, the steps it reached are shown as done and the rest as skipped.
 export function WorkflowStepper({ status, history = [] }) {
-  const currentIndex = STATUSES.indexOf(status);
+  const cancelled = status === 'Cancelled';
+  const reachedIndex = Math.max(0, ...history.map((h) => STATUSES.indexOf(h.status)));
+  const currentIndex = cancelled ? reachedIndex : STATUSES.indexOf(status);
   const finished = currentIndex === STATUSES.length - 1;
   const reachedAt = Object.fromEntries(history.map((h) => [h.status, h.at]));
   return (
-    <ol className="stepper" aria-label="Booking workflow">
+    <ol className={`stepper ${cancelled ? 'stepper-cancelled' : ''}`} aria-label="Booking workflow">
       {STATUSES.map((s, i) => {
-        const state = i < currentIndex || finished ? 'done' : i === currentIndex ? 'current' : 'todo';
+        const state = cancelled
+          ? i <= reachedIndex
+            ? 'done'
+            : 'skipped'
+          : i < currentIndex || finished
+            ? 'done'
+            : i === currentIndex
+              ? 'current'
+              : 'todo';
         return (
           <li key={s} className={`step step-${state}`} aria-current={state === 'current' ? 'step' : undefined}>
             <span className="step-dot">{state === 'done' ? '✓' : i + 1}</span>
@@ -88,6 +99,8 @@ export function ConfirmDialog({
   busyLabel = 'Deleting…',
   tone = 'danger',
   busy = false,
+  confirmDisabled = false,
+  cancelLabel = 'Cancel',
   onConfirm,
   onCancel,
 }) {
@@ -107,9 +120,13 @@ export function ConfirmDialog({
         <div className="modal-body">{children}</div>
         <div className="modal-actions">
           <button ref={cancelRef} className="btn" onClick={onCancel} disabled={busy}>
-            Cancel
+            {cancelLabel}
           </button>
-          <button className={`btn ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm} disabled={busy}>
+          <button
+            className={`btn ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}`}
+            onClick={onConfirm}
+            disabled={busy || confirmDisabled}
+          >
             {busy ? busyLabel : confirmLabel}
           </button>
         </div>

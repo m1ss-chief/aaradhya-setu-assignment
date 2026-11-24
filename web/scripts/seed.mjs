@@ -1,24 +1,34 @@
 // Usage: npm run seed   (reads MONGODB_URI from .env.local)
-// Clears the demo collections, inserts 20 bookings at different stages and
-// creates (or resets) the admin login from ADMIN_USERNAME / ADMIN_PASSWORD.
+// Clears the demo data (bookings, notifications, message templates), inserts 20
+// bookings at different stages and creates (or resets) two logins:
+//   owner: ADMIN_USERNAME / ADMIN_PASSWORD   (default admin / Setu@2026)
+//   staff: STAFF_USERNAME / STAFF_PASSWORD   (default staff / Staff@2026)
 
 import mongoose from 'mongoose';
 import { connectDB } from '../lib/db.js';
-import { Booking, Notification, Counter } from '../lib/models/index.js';
+import { Booking, Notification, Counter, Template } from '../lib/models/index.js';
 import { mongoRepo } from '../lib/repo/mongo-repo.js';
 import { seed } from '../lib/seed.js';
 import { saveAdmin } from '../lib/auth-service.js';
 
 await connectDB();
-await Promise.all([Booking.deleteMany({}), Notification.deleteMany({}), Counter.deleteMany({})]);
+await Promise.all([Booking.deleteMany({}), Notification.deleteMany({}), Counter.deleteMany({}), Template.deleteMany({})]);
 const bookings = await seed(mongoRepo);
 const notifications = await Notification.countDocuments();
-console.log(`Seeded ${bookings.length} bookings and ${notifications} notifications.`);
+const failed = await Notification.countDocuments({ 'delivery.status': 'failed' });
+console.log(`Seeded ${bookings.length} bookings and ${notifications} notifications (${failed} failed, to demo Resend).`);
 
-const admin = await saveAdmin(mongoRepo, {
+const owner = await saveAdmin(mongoRepo, {
   username: process.env.ADMIN_USERNAME || 'admin',
   password: process.env.ADMIN_PASSWORD || 'Setu@2026',
   name: process.env.ADMIN_NAME || 'Setu Admin',
+  role: 'owner',
 });
-console.log(`Admin login ready: ${admin.username} (${admin.name})`);
+const staff = await saveAdmin(mongoRepo, {
+  username: process.env.STAFF_USERNAME || 'staff',
+  password: process.env.STAFF_PASSWORD || 'Staff@2026',
+  name: process.env.STAFF_NAME || 'Temple Staff',
+  role: 'staff',
+});
+console.log(`Logins ready: ${owner.username} (owner), ${staff.username} (staff)`);
 await mongoose.disconnect();

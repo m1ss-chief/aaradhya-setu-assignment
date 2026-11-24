@@ -1,12 +1,19 @@
 // In-memory implementation of the same data layer, used by the tests.
-// It understands just the query shapes buildBookingQuery produces.
+// It understands the query shapes the services produce:
+// equality, $or, $regex, $gte/$lte, $ne, $in and dotted paths ("delivery.status").
+
+function get(doc, path) {
+  return path.split('.').reduce((v, key) => (v == null ? undefined : v[key]), doc);
+}
 
 function matches(doc, query) {
   return Object.entries(query).every(([key, cond]) => {
     if (key === '$or') return cond.some((sub) => matches(doc, sub));
-    const value = doc[key];
+    const value = get(doc, key);
     if (cond && typeof cond === 'object' && !(cond instanceof Date)) {
       if ('$regex' in cond) return new RegExp(cond.$regex, cond.$options || '').test(String(value ?? ''));
+      if ('$ne' in cond && value === cond.$ne) return false;
+      if ('$in' in cond && !cond.$in.includes(value)) return false;
       if ('$gte' in cond && !(new Date(value) >= cond.$gte)) return false;
       if ('$lte' in cond && !(new Date(value) <= cond.$lte)) return false;
       return true;
@@ -16,12 +23,14 @@ function matches(doc, query) {
 }
 
 function sorter(sort) {
-  const [[field, dir]] = Object.entries(sort);
+  const keys = Object.entries(sort);
   return (a, b) => {
-    const x = a[field] instanceof Date ? a[field].getTime() : a[field];
-    const y = b[field] instanceof Date ? b[field].getTime() : b[field];
-    if (x < y) return -1 * dir;
-    if (x > y) return 1 * dir;
+    for (const [field, dir] of keys) {
+      const x = a[field] instanceof Date ? a[field].getTime() : a[field];
+      const y = b[field] instanceof Date ? b[field].getTime() : b[field];
+      if (x < y) return -1 * dir;
+      if (x > y) return 1 * dir;
+    }
     return 0;
   };
 }
@@ -32,14 +41,36 @@ export function createMemoryRepo() {
   const bookings = [];
   const notifications = [];
   const admins = [];
+  const templates = [];
   let seq = 0;
+  let notificationSeq = 0;
 
   return {
     bookings,
     notifications,
     admins,
-    async findBookings(query, sort) {
-      return bookings.filter((b) => matches(b, query)).sort(sorter(sort)).map(copy);
+    templates,
+
+    // ── Bookings ──
+    async findBookings(query, sort, { skip = 0, limit = 0 } = {}) {
+      const all = bookings.filter((b) => matches(b, query)).sort(sorter(sort));
+      return all.slice(skip, limit ? skip + limit : undefined).map(copy);
+    },
+    async countBookings(query) {
+      return bookings.filter((b) => matches(b, query)).length;
+    },
+    async sumByPuja(query) {
+      const byPuja = new Map();
+      for (const b of bookings.filter((x) => matches(x, query))) {
+        const row = byPuja.get(b.pujaName) || { puja: b.pujaName, revenue: 0, count: 0 };
+        row.revenue += Number(b.amount) || 0;
+        row.count += 1;
+        byPuja.set(b.pujaName, row);
+      }
+      return [...byPuja.values()];
+    },
+    async distinctPujas() {
+      return [...new Set(bookings.map((b) => b.pujaName))];
     },
     async findBookingById(bookingId) {
       const b = bookings.find((x) => x.bookingId === bookingId);
@@ -57,8 +88,8 @@ export function createMemoryRepo() {
     async updateBookingStatus(bookingId, fromStatus, changes, historyEntry) {
       const b = bookings.find((x) => x.bookingId === bookingId && x.status === fromStatus);
       if (!b) return null;
-      Object.assign(b, changes);
-      b.statusHistory = [...(b.statusHistory || []), historyEntry];
+      Object.assign(b, copy(changes));
+      b.statusHistory = [...(b.statusHistory || []), copy(historyEntry)];
       return copy(b);
     },
     async updateBooking(bookingId, changes) {
@@ -79,6 +110,52 @@ export function createMemoryRepo() {
       }
       return removed;
     },
+
+    // ── Notifications ──
+    async createNotification(doc) {
+      notificationSeq += 1;
+      const stored = { id: `n${notificationSeq}`, ...copy(doc) };
+      notifications.push(stored);
+      return copy(stored);
+    },
+    async findNotifications(query) {
+      return notifications
+        .filter((n) => matches(n, query))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .map(copy);
+    },
+    async countNotifications(query) {
+      return notifications.filter((n) => matches(n, query)).length;
+    },
+    async findNotificationById(id) {
+      const n = notifications.find((x) => x.id === id);
+      return n ? copy(n) : null;
+    },
+    async updateNotification(id, expectedStatus, changes) {
+      const n = notifications.find((x) => x.id === id && x.delivery?.status === expectedStatus);
+      if (!n) return null;
+      Object.assign(n, copy(changes));
+      return copy(n);
+    },
+
+    // ── Message templates ──
+    async findTemplates() {
+      return templates.map(copy);
+    },
+    async upsertTemplate(doc) {
+      const i = templates.findIndex((t) => t.status === doc.status);
+      if (i === -1) templates.push(copy(doc));
+      else templates[i] = copy(doc);
+    },
+    async deleteTemplate(status) {
+      const i = templates.findIndex((t) => t.status === status);
+      if (i !== -1) templates.splice(i, 1);
+    },
+
+    // ── Admins ──
+    async listAdmins() {
+      return admins.map(copy);
+    },
     async findAdminByUsername(username) {
       const a = admins.find((x) => x.username === username);
       return a ? copy(a) : null;
@@ -92,20 +169,19 @@ export function createMemoryRepo() {
       Object.assign(a, copy(doc));
       return copy(a);
     },
+    async updateAdmin(username, changes) {
+      const a = admins.find((x) => x.username === username);
+      if (!a) return null;
+      Object.assign(a, copy(changes));
+      return copy(a);
+    },
+    async deleteAdmin(username) {
+      const i = admins.findIndex((x) => x.username === username);
+      if (i !== -1) admins.splice(i, 1);
+    },
     async recordAdminLogin(username, at) {
       const a = admins.find((x) => x.username === username);
       if (a) a.lastLoginAt = at;
-    },
-    async createNotification(doc) {
-      const stored = { id: String(notifications.length + 1), ...copy(doc) };
-      notifications.push(stored);
-      return copy(stored);
-    },
-    async findNotifications(query) {
-      return notifications
-        .filter((n) => matches(n, query))
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        .map(copy);
     },
   };
 }

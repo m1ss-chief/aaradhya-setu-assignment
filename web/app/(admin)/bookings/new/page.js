@@ -4,10 +4,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import BookingForm from '@/components/booking-form.js';
 import { Icon } from '@/components/icons.js';
+import { useAdmin, NoAccess } from '@/components/admin-context.js';
 import { api } from '@/components/ui.js';
 
 export default function NewBookingPage() {
   const router = useRouter();
+  const { can } = useAdmin();
+  if (!can('bookings:create')) return <NoAccess what="create bookings" />;
 
   async function create(form) {
     const { booking } = await api('/api/bookings', { method: 'POST', body: JSON.stringify(form) });

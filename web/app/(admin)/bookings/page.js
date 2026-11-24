@@ -3,9 +3,10 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { STATUSES } from '@/lib/workflow.js';
+import { ALL_STATUSES } from '@/lib/workflow.js';
 import { StatusBadge, ConfirmDialog, formatINR, formatDate, ErrorNote, api } from '@/components/ui.js';
 import { Icon } from '@/components/icons.js';
+import { useAdmin } from '@/components/admin-context.js';
 
 const PAGE_SIZE = 10;
 
@@ -19,34 +20,33 @@ const COLUMNS = [
   { key: null, label: 'Actions', className: 'col-actions' },
 ];
 
-function toCsv(rows) {
-  const cols = ['bookingId', 'devoteeName', 'phone', 'email', 'gotra', 'pujaName', 'templeName', 'pujaDate', 'amount', 'status', 'source'];
-  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  return [cols.join(','), ...rows.map((r) => cols.map((c) => esc(c === 'pujaDate' ? formatDate(r[c]) : r[c])).join(','))].join('\n');
-}
+const DEFAULT_FILTERS = { q: '', status: 'all', puja: 'all', sort: 'date', order: 'desc' };
 
 function BookingsTable() {
   const router = useRouter();
   const params = useSearchParams();
+  const { can } = useAdmin();
   const [filters, setFilters] = useState({
-    q: '',
+    ...DEFAULT_FILTERS,
     status: params.get('status') || 'all',
     puja: params.get('puja') || 'all',
-    sort: 'date',
-    order: 'desc',
   });
-  const [search, setSearch] = useState('');
-  const [bookings, setBookings] = useState(null);
-  const [stats, setStats] = useState(null);
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [result, setResult] = useState(null); // { bookings, total, page, pages }
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [toDelete, setToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Wait 250 ms after typing stops before searching, so we don't query on every keystroke.
   useEffect(() => {
-    const t = setTimeout(() => setFilters((f) => ({ ...f, q: search })), 250);
+    const t = setTimeout(() => {
+      setFilters((f) => (f.q === search ? f : { ...f, q: search }));
+    }, 250);
     return () => clearTimeout(t);
   }, [search]);
 
@@ -55,39 +55,33 @@ function BookingsTable() {
     loadStats();
   }, [loadStats]);
 
-  const [reloadKey, setReloadKey] = useState(0);
+  const filterQuery = new URLSearchParams(Object.entries(filters).filter(([, v]) => v !== '' && v !== 'all')).toString();
+
+  // Each page is fetched from the server (the database does the paging).
   useEffect(() => {
-    const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v !== '' && v !== 'all'));
     let cancelled = false;
-    setBookings(null);
-    api(`/api/bookings?${qs}`)
+    setLoading(true);
+    api(`/api/bookings?${filterQuery}&page=${page}&pageSize=${PAGE_SIZE}`)
       .then((d) => {
         if (cancelled) return;
-        setBookings(d.bookings);
-        setPage(1);
+        setResult(d);
+        if (d.page !== page) setPage(d.page); // e.g. the last row of the last page was deleted
       })
-      .catch((e) => !cancelled && setError(e.message));
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [filters, reloadKey]);
+  }, [filterQuery, page, reloadKey]);
 
-  const set = (patch) => setFilters((f) => ({ ...f, ...patch }));
+  const set = (patch) => {
+    setFilters((f) => ({ ...f, ...patch }));
+    setPage(1);
+  };
   const toggleSort = (key) => set({ sort: key, order: filters.sort === key && filters.order === 'desc' ? 'asc' : 'desc' });
   const arrow = (key) => (filters.sort === key ? (filters.order === 'asc' ? ' ↑' : ' ↓') : '');
   const filtered = filters.q || filters.status !== 'all' || filters.puja !== 'all';
-
-  const pages = bookings ? Math.max(1, Math.ceil(bookings.length / PAGE_SIZE)) : 1;
-  const visible = bookings?.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  function exportCsv() {
-    const blob = new Blob([toCsv(bookings || [])], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `bookings-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
+  const bookings = result?.bookings;
 
   async function confirmDelete() {
     setDeleting(true);
@@ -107,6 +101,8 @@ function BookingsTable() {
   }
 
   const stop = (e) => e.stopPropagation();
+  const from = result ? (result.page - 1) * PAGE_SIZE + 1 : 0;
+  const to = result ? Math.min(result.page * PAGE_SIZE, result.total) : 0;
 
   return (
     <>
@@ -116,12 +112,15 @@ function BookingsTable() {
           <p className="muted">Search, filter, edit and move bookings through the puja workflow.</p>
         </div>
         <div className="head-actions">
-          <button className="btn" onClick={exportCsv} disabled={!bookings?.length}>
+          {/* Exported on the server: every matching booking, not just this page. */}
+          <a className={`btn ${result?.total ? '' : 'disabled'}`} href={`/api/bookings/export?${filterQuery}`} download>
             <Icon name="download" /> Export CSV
-          </button>
-          <Link href="/bookings/new" className="btn btn-primary">
-            <Icon name="plus" /> New booking
-          </Link>
+          </a>
+          {can('bookings:create') && (
+            <Link href="/bookings/new" className="btn btn-primary">
+              <Icon name="plus" /> New booking
+            </Link>
+          )}
         </div>
       </div>
 
@@ -132,10 +131,10 @@ function BookingsTable() {
           <div className="num">{stats ? stats.total : '–'}</div>
           <div className="lbl">All bookings</div>
         </button>
-        {STATUSES.map((s) => (
+        {ALL_STATUSES.map((s) => (
           <button
             key={s}
-            className={`card stat ${filters.status === s ? 'active' : ''}`}
+            className={`card stat ${filters.status === s ? 'active' : ''} ${s === 'Cancelled' ? 'stat-cancel' : ''}`}
             onClick={() => set({ status: filters.status === s ? 'all' : s })}
           >
             <div className="num">{stats ? stats.byStatus[s] : '–'}</div>
@@ -149,12 +148,15 @@ function BookingsTable() {
           type="search"
           placeholder="Search by booking ID, devotee, puja, temple or phone…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
           aria-label="Search bookings"
         />
         <select value={filters.status} onChange={(e) => set({ status: e.target.value })} aria-label="Filter by status">
           <option value="all">All statuses</option>
-          {STATUSES.map((s) => (
+          {ALL_STATUSES.map((s) => (
             <option key={s}>{s}</option>
           ))}
         </select>
@@ -184,7 +186,7 @@ function BookingsTable() {
             className="btn btn-ghost"
             onClick={() => {
               setSearch('');
-              setFilters({ q: '', status: 'all', puja: 'all', sort: 'date', order: 'desc' });
+              set(DEFAULT_FILTERS);
             }}
           >
             Clear filters
@@ -192,7 +194,7 @@ function BookingsTable() {
         )}
       </div>
 
-      <div className="table-wrap">
+      <div className={`table-wrap ${loading && bookings ? 'is-loading' : ''}`}>
         <table>
           <thead>
             <tr>
@@ -204,7 +206,7 @@ function BookingsTable() {
             </tr>
           </thead>
           <tbody>
-            {bookings === null &&
+            {!bookings &&
               [0, 1, 2, 3].map((i) => (
                 <tr key={i}>
                   <td colSpan={COLUMNS.length}>
@@ -219,9 +221,10 @@ function BookingsTable() {
                 </td>
               </tr>
             )}
-            {visible?.map((b) => (
+            {bookings?.map((b) => (
               <tr
                 key={b.bookingId}
+                className={b.status === 'Cancelled' ? 'row-cancelled' : ''}
                 onClick={() => router.push(`/bookings/${b.bookingId}`)}
                 onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && router.push(`/bookings/${b.bookingId}`)}
                 tabIndex={0}
@@ -245,12 +248,16 @@ function BookingsTable() {
                     <Link href={`/bookings/${b.bookingId}`} className="icon-btn" title="View" aria-label={`View ${b.bookingId}`}>
                       <Icon name="eye" />
                     </Link>
-                    <Link href={`/bookings/${b.bookingId}/edit`} className="icon-btn" title="Edit" aria-label={`Edit ${b.bookingId}`}>
-                      <Icon name="edit" />
-                    </Link>
-                    <button className="icon-btn danger" title="Delete" aria-label={`Delete ${b.bookingId}`} onClick={() => setToDelete(b)}>
-                      <Icon name="trash" />
-                    </button>
+                    {can('bookings:edit') && (
+                      <Link href={`/bookings/${b.bookingId}/edit`} className="icon-btn" title="Edit" aria-label={`Edit ${b.bookingId}`}>
+                        <Icon name="edit" />
+                      </Link>
+                    )}
+                    {can('bookings:delete') && (
+                      <button className="icon-btn danger" title="Delete" aria-label={`Delete ${b.bookingId}`} onClick={() => setToDelete(b)}>
+                        <Icon name="trash" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -259,19 +266,24 @@ function BookingsTable() {
         </table>
       </div>
 
-      {bookings && bookings.length > 0 && (
+      {result && result.total > 0 && (
         <div className="pager">
           <span className="muted small">
-            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, bookings.length)} of {bookings.length}
+            Showing {from}–{to} of {result.total}
           </span>
           <div className="pager-btns">
-            <button className="icon-btn" onClick={() => setPage((p) => p - 1)} disabled={page === 1} aria-label="Previous page">
+            <button className="icon-btn" onClick={() => setPage((p) => p - 1)} disabled={result.page <= 1 || loading} aria-label="Previous page">
               <Icon name="chevronLeft" />
             </button>
             <span className="small">
-              Page {page} of {pages}
+              Page {result.page} of {result.pages}
             </span>
-            <button className="icon-btn" onClick={() => setPage((p) => p + 1)} disabled={page === pages} aria-label="Next page">
+            <button
+              className="icon-btn"
+              onClick={() => setPage((p) => p + 1)}
+              disabled={result.page >= result.pages || loading}
+              aria-label="Next page"
+            >
               <Icon name="chevronRight" />
             </button>
           </div>
@@ -286,9 +298,14 @@ function BookingsTable() {
         onConfirm={confirmDelete}
       >
         <p>
-          <b>{toDelete?.pujaName}</b> for <b>{toDelete?.devoteeName}</b> ({formatINR(toDelete?.amount)}) and its WhatsApp
-          message history will be removed permanently. This cannot be undone.
+          <b>{toDelete?.pujaName}</b> for <b>{toDelete?.devoteeName}</b> ({formatINR(toDelete?.amount)}) and its WhatsApp message
+          history will be removed permanently. This cannot be undone.
         </p>
+        {['Pending', 'Confirmed', 'In Progress'].includes(toDelete?.status) && (
+          <p className="warn-note">
+            To keep a record, open the booking and use <b>Cancel booking</b> instead.
+          </p>
+        )}
       </ConfirmDialog>
 
       {toast && <div className="toast">{toast}</div>}

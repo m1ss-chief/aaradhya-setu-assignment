@@ -1,11 +1,11 @@
 import mongoose from 'mongoose';
-import { STATUSES } from '../workflow.js';
+import { ALL_STATUSES } from '../workflow.js';
 
 const { Schema } = mongoose;
 
 const StatusEventSchema = new Schema(
   {
-    status: { type: String, enum: STATUSES, required: true },
+    status: { type: String, enum: ALL_STATUSES, required: true },
     at: { type: Date, required: true },
     note: String,
     by: String, // admin who made the change
@@ -30,8 +30,11 @@ const BookingSchema = new Schema(
     pujaDate: { type: Date, required: true, index: true },
     amount: { type: Number, required: true, min: 0 },
     addOns: [AddOnSchema],
-    status: { type: String, enum: STATUSES, default: 'Pending', index: true },
+    status: { type: String, enum: ALL_STATUSES, default: 'Pending', index: true },
     videoUrl: String,
+    cancelReason: String,
+    cancelledAt: Date,
+    cancelledBy: String,
     statusHistory: [StatusEventSchema],
     source: { type: String, enum: ['admin', 'shopify', 'seed'], default: 'admin' },
     shopifyOrderId: String,
@@ -40,11 +43,13 @@ const BookingSchema = new Schema(
   },
   { timestamps: true },
 );
+// Supports the default dashboard sort (status filter + puja date) when paging.
+BookingSchema.index({ status: 1, pujaDate: -1 });
 
 const NotificationSchema = new Schema(
   {
     bookingId: { type: String, required: true, index: true },
-    status: { type: String, enum: STATUSES, required: true },
+    status: { type: String, enum: ALL_STATUSES, required: true },
     channel: { type: String, default: 'whatsapp' },
     to: String,
     devoteeName: String,
@@ -52,9 +57,13 @@ const NotificationSchema = new Schema(
     delivery: {
       provider: String,
       messageId: String,
-      status: String,
+      status: { type: String, enum: ['sent', 'failed'], index: true },
+      error: String,
       sentAt: String,
     },
+    attempts: { type: Number, default: 1 },
+    lastAttemptAt: Date,
+    lastAttemptBy: String,
     createdAt: { type: Date, default: Date.now, index: true },
   },
   { versionKey: false },
@@ -69,14 +78,29 @@ const AdminSchema = new Schema(
   {
     username: { type: String, required: true, unique: true, lowercase: true, trim: true },
     name: { type: String, required: true },
-    role: { type: String, enum: ['admin'], default: 'admin' },
+    // "admin" is the pre-roles value; it is treated as "owner".
+    role: { type: String, enum: ['owner', 'staff', 'admin'], default: 'staff' },
     passwordHash: { type: String, required: true },
     lastLoginAt: Date,
+    passwordChangedAt: Date,
+    createdBy: String,
   },
   { timestamps: true },
+);
+
+// Owner-edited WhatsApp message wording (one document per status). Missing = default text.
+const TemplateSchema = new Schema(
+  {
+    status: { type: String, required: true, unique: true },
+    body: { type: String, required: true },
+    updatedBy: String,
+    updatedAt: Date,
+  },
+  { versionKey: false },
 );
 
 export const Booking = mongoose.models.Booking || mongoose.model('Booking', BookingSchema);
 export const Notification = mongoose.models.Notification || mongoose.model('Notification', NotificationSchema);
 export const Counter = mongoose.models.Counter || mongoose.model('Counter', CounterSchema);
 export const Admin = mongoose.models.Admin || mongoose.model('Admin', AdminSchema);
+export const Template = mongoose.models.Template || mongoose.model('Template', TemplateSchema);
