@@ -17,18 +17,18 @@ export const GET = handle(async (_request, { params }) => {
   return NextResponse.json({ booking, notifications });
 });
 
-// PUT /api/bookings/AS-2026-0001  { devoteeName?, phone?, ... }   (owner)
+// PUT /api/bookings/AS-2026-0001  { devoteeName?, phone?, email?, gotra?, pujaName?, amount? }
 // Edits booking details. Status changes go through /status or /cancel so the devotee is notified.
 export const PUT = handle(async (request, { params }) => {
-  const admin = await requireAdmin('bookings:edit');
+  const admin = await requireAdmin();
   const { id } = await params;
   const booking = await updateBooking(mongoRepo, id, await request.json(), { by: admin.name });
   return NextResponse.json({ booking });
 });
 
-// DELETE /api/bookings/AS-2026-0001  -> removes the booking and its notification history   (owner)
+// DELETE /api/bookings/AS-2026-0001  -> removes the booking and its notification history
 export const DELETE = handle(async (_request, { params }) => {
-  await requireAdmin('bookings:delete');
+  await requireAdmin();
   const { id } = await params;
   return NextResponse.json(await deleteBooking(mongoRepo, id));
 });

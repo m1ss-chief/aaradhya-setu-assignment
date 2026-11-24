@@ -2,7 +2,7 @@
 
 import mongoose from 'mongoose';
 import { connectDB } from '../db.js';
-import { Booking, Notification, Counter, Admin, Template } from '../models/index.js';
+import { Booking, Notification, Counter, Admin, Template, Slot } from '../models/index.js';
 
 function clean(doc) {
   if (!doc) return doc;
@@ -123,6 +123,59 @@ export const mongoRepo = {
     return clean(updated);
   },
 
+  // ── Slots ──
+  async createSlots(docs) {
+    await connectDB();
+    if (!docs.length) return [];
+    return (await Slot.insertMany(docs)).map((d) => clean(d.toObject()));
+  },
+
+  async findSlots(query, sort = { startsAt: 1 }) {
+    await connectDB();
+    return (await Slot.find(query).sort(sort).lean()).map(clean);
+  },
+
+  async findSlotById(id) {
+    await connectDB();
+    if (!mongoose.isValidObjectId(id)) return null;
+    return clean(await Slot.findById(id).lean());
+  },
+
+  // Takes one seat, in a single atomic update: only if the slot is open, has not
+  // started, and booked < capacity. Two devotees can never get the last seat.
+  async reserveSeat(id, notBefore) {
+    await connectDB();
+    if (!mongoose.isValidObjectId(id)) return null;
+    const slot = await Slot.findOneAndUpdate(
+      { _id: id, status: 'open', startsAt: { $gt: notBefore }, $expr: { $lt: ['$booked', '$capacity'] } },
+      { $inc: { booked: 1 } },
+      { new: true },
+    ).lean();
+    return clean(slot);
+  },
+
+  async releaseSeat(id) {
+    await connectDB();
+    if (!mongoose.isValidObjectId(id)) return null;
+    return clean(await Slot.findOneAndUpdate({ _id: id, booked: { $gt: 0 } }, { $inc: { booked: -1 } }, { new: true }).lean());
+  },
+
+  // Changes capacity/status/note. A new capacity only applies if it is still >= booked.
+  async updateSlot(id, changes) {
+    await connectDB();
+    if (!mongoose.isValidObjectId(id)) return null;
+    const guard = 'capacity' in changes ? { booked: { $lte: changes.capacity } } : {};
+    return clean(await Slot.findOneAndUpdate({ _id: id, ...guard }, { $set: changes }, { new: true }).lean());
+  },
+
+  // Only deletes an empty slot.
+  async deleteSlot(id) {
+    await connectDB();
+    if (!mongoose.isValidObjectId(id)) return false;
+    const { deletedCount } = await Slot.deleteOne({ _id: id, booked: 0 });
+    return deletedCount === 1;
+  },
+
   // ── Message templates ──
   async findTemplates() {
     await connectDB();
@@ -140,10 +193,6 @@ export const mongoRepo = {
   },
 
   // ── Admins ──
-  async listAdmins() {
-    await connectDB();
-    return (await Admin.find({}).lean()).map(clean);
-  },
 
   async findAdminByUsername(username) {
     await connectDB();
@@ -161,10 +210,6 @@ export const mongoRepo = {
     return clean(await Admin.findOneAndUpdate({ username }, { $set: changes }, { new: true }).lean());
   },
 
-  async deleteAdmin(username) {
-    await connectDB();
-    await Admin.deleteOne({ username });
-  },
 
   async recordAdminLogin(username, at) {
     await connectDB();

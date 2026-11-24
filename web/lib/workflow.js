@@ -22,6 +22,11 @@ export const STATUS_META = {
   Cancelled: { stage: 'Cancelled', tone: 'cancel' },
 };
 
+// Not a status: the message a confirmed devotee gets when their booking moves to another slot.
+export const RESCHEDULED = 'Rescheduled';
+export const MESSAGE_META = { ...STATUS_META, [RESCHEDULED]: { stage: 'Rescheduled', tone: 'info' } };
+export const NOTIFICATION_TYPES = [...ALL_STATUSES, RESCHEDULED];
+
 // A booking may only move one step forward. Skipping a step would skip the
 // devotee notification for that step, and moving backwards would send
 // confusing messages, so neither is allowed.
@@ -41,7 +46,7 @@ export function canCancel(status) {
 
 // Default WhatsApp-style message templates. {{placeholders}} are filled from the booking.
 // Pending has no template: the devotee hears from us once the booking is confirmed.
-// Owners can override these from Settings; overrides are stored in the database.
+// Admins can override these from Settings; overrides are stored in the database.
 export const TEMPLATES = {
   Confirmed:
     '🙏 Namaste {{devoteeName}}, your {{pujaName}} at {{templeName}} is confirmed for {{pujaDate}}. Booking ID: {{bookingId}}. We will message you when the puja begins.',
@@ -53,6 +58,8 @@ export const TEMPLATES = {
     '📹 {{devoteeName}}, the video of your {{pujaName}} is ready. Watch it here: {{videoUrl}} (Booking ID: {{bookingId}}). Thank you for choosing Aaradhya Setu 🙏',
   Cancelled:
     '🙏 {{devoteeName}}, your {{pujaName}} at {{templeName}} (Booking ID: {{bookingId}}) has been cancelled. Reason: {{reason}}. Our team will contact you about your refund.',
+  Rescheduled:
+    '🗓️ {{devoteeName}}, your {{pujaName}} at {{templeName}} has been moved to {{pujaDate}}. Booking ID: {{bookingId}}. Reply here if the new time does not suit you.',
 };
 
 export const TEMPLATE_STATUSES = Object.keys(TEMPLATES);
@@ -71,10 +78,23 @@ export function placeholdersIn(template) {
   return [...String(template).matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1]);
 }
 
+// Puja times are shown in Indian time wherever the admin is: "5 Dec 2026, 10:00 am".
 export function formatPujaDate(date) {
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return String(date ?? '');
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  return d.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'Asia/Kolkata',
+  });
+}
+
+// The calendar day in India ("2026-12-05"), used to compare puja days.
+export function istDay(date) {
+  return new Date(new Date(date).getTime() + 330 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 // Fills a template. Throws if a placeholder has no value, so we never send a
@@ -95,7 +115,7 @@ export function renderTemplate(template, vars) {
   return text;
 }
 
-// `templates` lets callers pass the owner-edited versions; defaults otherwise.
+// `templates` lets callers pass the admin-edited versions; defaults otherwise.
 export function messageForStatus(status, booking, templates = TEMPLATES, extra = {}) {
   const template = templates[status] ?? TEMPLATES[status];
   if (!template) return null;

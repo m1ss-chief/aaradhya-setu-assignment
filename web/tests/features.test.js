@@ -17,10 +17,10 @@ import {
   bookingsToCsv,
   exportBookings,
 } from '../lib/bookings-service.js';
-import { saveAdmin, createAdmin, updateAdmin, removeAdmin, listAdmins, changeOwnPassword, authenticate, publicAdmin } from '../lib/auth-service.js';
-import { can } from '../lib/permissions.js';
+import { saveAdmin, changeOwnPassword, authenticate } from '../lib/auth-service.js';
 import { phoneProblem } from '../lib/notifier.js';
 import { createMemoryRepo } from '../lib/repo/memory-repo.js';
+import { bookInSlot } from './helpers.js';
 import { seed } from '../lib/seed.js';
 
 const sample = {
@@ -36,7 +36,7 @@ const sample = {
 
 test('cancel keeps the booking, records the reason and optionally messages the devotee', async () => {
   const repo = createMemoryRepo();
-  const { bookingId } = await createBooking(repo, sample);
+  const { bookingId } = await bookInSlot(repo, sample);
   await changeStatus(repo, bookingId, 'Confirmed');
 
   await assert.rejects(cancelBooking(repo, bookingId, { reason: '  ' }), /reason/);
@@ -59,20 +59,20 @@ test('cancel keeps the booking, records the reason and optionally messages the d
 
 test('cancel without notifying sends nothing; completed pujas cannot be cancelled', async () => {
   const repo = createMemoryRepo();
-  const a = await createBooking(repo, sample);
+  const a = await bookInSlot(repo, sample);
   const { notification } = await cancelBooking(repo, a.bookingId, { reason: 'Duplicate booking' });
   assert.equal(notification, null);
   assert.equal((await listNotifications(repo, { bookingId: a.bookingId })).length, 0);
 
-  const b = await createBooking(repo, sample);
-  for (const s of ['Confirmed', 'In Progress', 'Completed']) await changeStatus(repo, b.bookingId, s);
+  const b = await bookInSlot(repo, sample);
+  for (const s of ['Confirmed', 'In Progress', 'Completed']) await changeStatus(repo, b.bookingId, s, { at: '2026-12-05T05:00:00.000Z' });
   await assert.rejects(cancelBooking(repo, b.bookingId, { reason: 'too late' }), /no longer be cancelled/);
 });
 
 test('cancelled bookings are counted but excluded from booking value', async () => {
   const repo = createMemoryRepo();
-  await createBooking(repo, sample);
-  const b = await createBooking(repo, { ...sample, amount: 5000 });
+  await bookInSlot(repo, sample);
+  const b = await bookInSlot(repo, { ...sample, amount: 5000 });
   await cancelBooking(repo, b.bookingId, { reason: 'Refunded' });
   const stats = await getStats(repo);
   assert.equal(stats.total, 2);
@@ -80,49 +80,6 @@ test('cancelled bookings are counted but excluded from booking value', async () 
   assert.equal(stats.revenue, 2100);
   const { bookings } = await listBookings(repo, { status: 'Cancelled' });
   assert.equal(bookings.length, 1);
-});
-
-// ───────────── Roles ─────────────
-
-test('owners can do everything; staff can only run the workflow and resend messages', () => {
-  for (const p of ['bookings:create', 'bookings:edit', 'bookings:cancel', 'bookings:delete', 'admins:manage', 'templates:edit', 'workflow:advance', 'notifications:resend']) {
-    assert.ok(can('owner', p), `owner ${p}`);
-  }
-  assert.ok(can('staff', 'workflow:advance'));
-  assert.ok(can('staff', 'notifications:resend'));
-  for (const p of ['bookings:create', 'bookings:edit', 'bookings:cancel', 'bookings:delete', 'admins:manage', 'templates:edit']) {
-    assert.ok(!can('staff', p), `staff must not ${p}`);
-  }
-  assert.ok(!can('nobody', 'workflow:advance'));
-  assert.equal(publicAdmin({ username: 'old', role: 'admin', passwordHash: 'x' }).role, 'owner', 'pre-roles accounts become owners');
-});
-
-test('team management: no duplicate IDs, no self-demotion/removal, always one owner', async () => {
-  const repo = createMemoryRepo();
-  await saveAdmin(repo, { username: 'admin', password: 'Setu@2026', name: 'Setu Admin', role: 'owner' });
-  const staff = await createAdmin(repo, { username: 'priya', password: 'Temple123', name: 'Priya', role: 'staff' }, { by: 'Setu Admin' });
-  assert.equal(staff.role, 'staff');
-  assert.equal(staff.passwordHash, undefined);
-  await assert.rejects(createAdmin(repo, { username: 'PRIYA', password: 'Temple123' }), /already taken/);
-  await assert.rejects(createAdmin(repo, { username: 'ravi', password: 'onlyletters' }), /letters and numbers/);
-  await assert.rejects(createAdmin(repo, { username: 'ravi', password: 'Temple123', role: 'god' }), /Role/);
-
-  await assert.rejects(updateAdmin(repo, 'admin', 'admin', { role: 'staff' }), /own role/);
-  await assert.rejects(removeAdmin(repo, 'admin', 'admin'), /own account/);
-
-  // Promote Priya, then she can demote the original owner; but not leave zero owners.
-  await updateAdmin(repo, 'admin', 'priya', { role: 'owner' });
-  await updateAdmin(repo, 'priya', 'admin', { role: 'staff' });
-  await assert.rejects(removeAdmin(repo, 'admin', 'priya'), /at least one owner/);
-  assert.deepEqual((await listAdmins(repo)).map((a) => [a.username, a.role]), [['priya', 'owner'], ['admin', 'staff']]);
-
-  // Owner resets a password; the old one stops working.
-  await updateAdmin(repo, 'priya', 'admin', { password: 'Fresh-pass-1' });
-  assert.equal(await authenticate(repo, 'admin', 'Setu@2026'), null);
-  assert.ok(await authenticate(repo, 'admin', 'Fresh-pass-1'));
-
-  await removeAdmin(repo, 'priya', 'admin');
-  assert.equal((await listAdmins(repo)).length, 1);
 });
 
 test('changing your own password needs the current one', async () => {
@@ -147,7 +104,7 @@ test('the mock provider rejects malformed numbers', () => {
 
 test('a failed message can be resent after fixing the number; only once even if clicked twice', async () => {
   const repo = createMemoryRepo();
-  const { bookingId } = await createBooking(repo, { ...sample, phone: '+91 98765 4321' });
+  const { bookingId } = await bookInSlot(repo, { ...sample, phone: '+91 98765 4321' });
   const { notification } = await changeStatus(repo, bookingId, 'Confirmed');
   assert.equal(notification.delivery.status, 'failed');
   assert.match(notification.delivery.error, /10 digits/);
@@ -155,22 +112,22 @@ test('a failed message can be resent after fixing the number; only once even if 
   assert.equal((await listNotifications(repo, { delivery: 'failed' })).length, 1);
 
   // Resending to the same wrong number fails again and counts the attempt.
-  const retry = await resendNotification(repo, notification.id, { by: 'Temple Staff' });
+  const retry = await resendNotification(repo, notification.id, { by: 'Setu Admin' });
   assert.equal(retry.delivery.status, 'failed');
   assert.equal(retry.attempts, 2);
 
   // Fix the number, resend: delivered to the NEW number.
   await updateBooking(repo, bookingId, { phone: '+91 98765 43210' });
   const [first, second] = await Promise.allSettled([
-    resendNotification(repo, notification.id, { by: 'Temple Staff' }),
-    resendNotification(repo, notification.id, { by: 'Temple Staff' }),
+    resendNotification(repo, notification.id, { by: 'Setu Admin' }),
+    resendNotification(repo, notification.id, { by: 'Setu Admin' }),
   ]);
   const ok = [first, second].filter((r) => r.status === 'fulfilled');
   assert.equal(ok.length, 1, 'only one resend goes through');
   assert.equal(ok[0].value.delivery.status, 'sent');
   assert.equal(ok[0].value.to, '+91 98765 43210');
   assert.equal(ok[0].value.attempts, 3);
-  assert.equal(ok[0].value.lastAttemptBy, 'Temple Staff');
+  assert.equal(ok[0].value.lastAttemptBy, 'Setu Admin');
   await assert.rejects(resendNotification(repo, notification.id), /Only failed/);
   await assert.rejects(resendNotification(repo, 'nope'), /not found/);
   assert.equal((await getStats(repo)).failedMessages, 0);
@@ -180,9 +137,14 @@ test('seed data includes a failed message and a cancelled booking for the demo',
   const repo = createMemoryRepo();
   await seed(repo, new Date('2026-11-24T00:00:00Z'));
   const stats = await getStats(repo);
-  assert.equal(stats.total, 20);
+  assert.equal(stats.total, 21);
   assert.equal(stats.byStatus.Cancelled, 1);
   assert.equal(stats.failedMessages, 1);
+  assert.equal(stats.needsSlot, 1, 'the Shopify order for the closed day waits for a slot');
+  // Every active booking with a slot holds exactly one seat.
+  const active = repo.bookings.filter((b) => b.slotId && b.status !== 'Cancelled').length;
+  assert.equal(repo.slots.reduce((sum, s) => sum + s.booked, 0), active);
+  assert.ok(repo.slots.every((s) => s.booked <= s.capacity));
 });
 
 // ───────────── Server-side pagination ─────────────
@@ -219,7 +181,7 @@ test('CSV export escapes quotes and defuses spreadsheet formulas', () => {
 
 // ───────────── Editable message templates ─────────────
 
-test('owners can reword messages; placeholders are checked; reset restores the default', async () => {
+test('admins can reword messages; placeholders are checked; reset restores the default', async () => {
   const repo = createMemoryRepo();
   const custom = 'Jai Shri Ram {{devoteeName}}! {{pujaName}} confirmed. ID {{bookingId}}';
   await saveTemplate(repo, 'Confirmed', custom, { by: 'Setu Admin' });
@@ -227,7 +189,7 @@ test('owners can reword messages; placeholders are checked; reset restores the d
   assert.equal(templates.Confirmed, custom);
   assert.equal(meta.Confirmed.updatedBy, 'Setu Admin');
 
-  const { bookingId } = await createBooking(repo, sample);
+  const { bookingId } = await bookInSlot(repo, sample);
   const { notification } = await changeStatus(repo, bookingId, 'Confirmed');
   assert.equal(notification.message, `Jai Shri Ram Ananya Sharma! Rudrabhishek confirmed. ID ${bookingId}`);
 

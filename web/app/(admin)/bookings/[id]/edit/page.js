@@ -5,13 +5,11 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import BookingForm from '@/components/booking-form.js';
 import { Icon } from '@/components/icons.js';
-import { useAdmin, NoAccess } from '@/components/admin-context.js';
 import { StatusBadge, ErrorNote, api } from '@/components/ui.js';
 
 export default function EditBookingPage() {
   const { id } = useParams();
   const router = useRouter();
-  const { can } = useAdmin();
   const [booking, setBooking] = useState(null);
   const [error, setError] = useState('');
 
@@ -26,7 +24,6 @@ export default function EditBookingPage() {
     router.push(`/bookings/${id}?saved=1`);
   }
 
-  if (!can('bookings:edit')) return <NoAccess what="edit bookings" />;
 
   return (
     <div className="narrow">
@@ -44,7 +41,7 @@ export default function EditBookingPage() {
       {booking ? (
         <>
           <p className="info-note">
-            Status is changed from the booking page through the workflow, so the devotee always gets their WhatsApp update.
+            Status is changed from the booking page through the workflow, and the time through Reschedule, so the devotee is always told.
           </p>
           <BookingForm
             booking={booking}

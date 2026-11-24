@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ALL_STATUSES } from '@/lib/workflow.js';
 import { StatusBadge, ConfirmDialog, formatINR, formatDate, ErrorNote, api } from '@/components/ui.js';
 import { Icon } from '@/components/icons.js';
-import { useAdmin } from '@/components/admin-context.js';
 
 const PAGE_SIZE = 10;
 
@@ -20,16 +19,17 @@ const COLUMNS = [
   { key: null, label: 'Actions', className: 'col-actions' },
 ];
 
-const DEFAULT_FILTERS = { q: '', status: 'all', puja: 'all', sort: 'date', order: 'desc' };
+const DEFAULT_FILTERS = { q: '', status: 'all', puja: 'all', slot: '', sort: 'date', order: 'desc' };
+const timeOf = (d) => new Date(d).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
 
 function BookingsTable() {
   const router = useRouter();
   const params = useSearchParams();
-  const { can } = useAdmin();
   const [filters, setFilters] = useState({
     ...DEFAULT_FILTERS,
     status: params.get('status') || 'all',
     puja: params.get('puja') || 'all',
+    slot: params.get('slot') || '',
   });
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -80,7 +80,7 @@ function BookingsTable() {
   };
   const toggleSort = (key) => set({ sort: key, order: filters.sort === key && filters.order === 'desc' ? 'asc' : 'desc' });
   const arrow = (key) => (filters.sort === key ? (filters.order === 'asc' ? ' ↑' : ' ↓') : '');
-  const filtered = filters.q || filters.status !== 'all' || filters.puja !== 'all';
+  const filtered = filters.q || filters.status !== 'all' || filters.puja !== 'all' || filters.slot;
   const bookings = result?.bookings;
 
   async function confirmDelete() {
@@ -116,15 +116,22 @@ function BookingsTable() {
           <a className={`btn ${result?.total ? '' : 'disabled'}`} href={`/api/bookings/export?${filterQuery}`} download>
             <Icon name="download" /> Export CSV
           </a>
-          {can('bookings:create') && (
-            <Link href="/bookings/new" className="btn btn-primary">
-              <Icon name="plus" /> New booking
-            </Link>
-          )}
+          <Link href="/bookings/new" className="btn btn-primary">
+            <Icon name="plus" /> New booking
+          </Link>
         </div>
       </div>
 
       <ErrorNote error={error} />
+
+      {filters.slot && filters.slot !== 'none' && (
+        <div className="info-note slot-filter-note">
+          Showing the bookings in one slot.{' '}
+          <button className="link-sm as-link" onClick={() => set({ slot: '' })}>
+            Show all bookings
+          </button>
+        </div>
+      )}
 
       <section className="stats" aria-label="Filter by status">
         <button className={`card stat ${filters.status === 'all' ? 'active' : ''}`} onClick={() => set({ status: 'all' })}>
@@ -166,6 +173,15 @@ function BookingsTable() {
             <option key={p}>{p}</option>
           ))}
         </select>
+        <button
+          type="button"
+          className={`btn ${filters.slot === 'none' ? 'btn-primary' : ''}`}
+          aria-pressed={filters.slot === 'none'}
+          onClick={() => set({ slot: filters.slot === 'none' ? '' : 'none' })}
+          title="Bookings that still need a time slot"
+        >
+          <Icon name="calendar" /> Needs a slot{stats?.needsSlot ? ` (${stats.needsSlot})` : ''}
+        </button>
         <select
           value={`${filters.sort}:${filters.order}`}
           onChange={(e) => {
@@ -238,7 +254,14 @@ function BookingsTable() {
                   {b.pujaName}
                   <span className="sub">{b.templeName}</span>
                 </td>
-                <td>{formatDate(b.pujaDate)}</td>
+                <td>
+                  {formatDate(b.pujaDate)}
+                  {b.slotId ? (
+                    <span className="sub">{timeOf(b.pujaDate)}</span>
+                  ) : (
+                    ['Pending', 'Confirmed'].includes(b.status) && <span className="badge badge-slot">Needs a slot</span>
+                  )}
+                </td>
                 <td className="amount">{formatINR(b.amount)}</td>
                 <td>
                   <StatusBadge status={b.status} />
@@ -248,16 +271,24 @@ function BookingsTable() {
                     <Link href={`/bookings/${b.bookingId}`} className="icon-btn" title="View" aria-label={`View ${b.bookingId}`}>
                       <Icon name="eye" />
                     </Link>
-                    {can('bookings:edit') && (
-                      <Link href={`/bookings/${b.bookingId}/edit`} className="icon-btn" title="Edit" aria-label={`Edit ${b.bookingId}`}>
-                        <Icon name="edit" />
+                    <Link href={`/bookings/${b.bookingId}/edit`} className="icon-btn" title="Edit" aria-label={`Edit ${b.bookingId}`}>
+                      <Icon name="edit" />
+                    </Link>
+                    {['Pending', 'Confirmed'].includes(b.status) ? (
+                      <Link
+                        href={`/bookings/${b.bookingId}?reschedule=1`}
+                        className="icon-btn"
+                        title={b.slotId ? 'Reschedule' : 'Assign a slot'}
+                        aria-label={`${b.slotId ? 'Reschedule' : 'Assign a slot to'} ${b.bookingId}`}
+                      >
+                        <Icon name="calendar" />
                       </Link>
+                    ) : (
+                      <span className="icon-btn" aria-hidden />
                     )}
-                    {can('bookings:delete') && (
-                      <button className="icon-btn danger" title="Delete" aria-label={`Delete ${b.bookingId}`} onClick={() => setToDelete(b)}>
-                        <Icon name="trash" />
-                      </button>
-                    )}
+                    <button className="icon-btn danger" title="Delete" aria-label={`Delete ${b.bookingId}`} onClick={() => setToDelete(b)}>
+                      <Icon name="trash" />
+                    </button>
                   </div>
                 </td>
               </tr>

@@ -9,7 +9,7 @@
     "start": "next start",
     "seed": "node --env-file=.env.local scripts/seed.mjs",
     "create-admin": "node --env-file=.env.local scripts/create-admin.mjs",
-    "test": "node --test tests/bookings.test.js tests/auth.test.js tests/features.test.js"
+    "test": "node --test tests/bookings.test.js tests/auth.test.js tests/features.test.js tests/slots.test.js"
   },
   "dependencies": {
     "mongoose": "^8.9.0",

@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { STATUS_META, messageForStatus } from '@/lib/workflow.js';
-import { ROLE_LABELS } from '@/lib/permissions.js';
+import { MESSAGE_META, messageForStatus } from '@/lib/workflow.js';
 import { ErrorNote, formatDate, api } from '@/components/ui.js';
 import { Icon } from '@/components/icons.js';
 import { useAdmin } from '@/components/admin-context.js';
@@ -75,7 +74,7 @@ function PasswordCard() {
   );
 }
 
-function TemplateEditor({ status, value, defaultValue, rules, meta, editable, onSaved }) {
+function TemplateEditor({ status, value, defaultValue, rules, meta, onSaved }) {
   const [text, setText] = useState(value);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -121,7 +120,7 @@ function TemplateEditor({ status, value, defaultValue, rules, meta, editable, on
     <article className="template">
       <div className="template-head">
         <h3>
-          {STATUS_META[status].stage} <span className="muted small">({status})</span>
+          {MESSAGE_META[status].stage} <span className="muted small">({status})</span>
         </h3>
         {customised ? (
           <span className="badge badge-info" title={meta ? `Edited by ${meta.updatedBy} on ${formatDate(meta.updatedAt, true)}` : ''}>
@@ -136,53 +135,48 @@ function TemplateEditor({ status, value, defaultValue, rules, meta, editable, on
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            readOnly={!editable}
             rows={4}
             aria-label={`Message for ${status}`}
           />
-          {editable && (
-            <div className="chips" aria-label="Insert a placeholder">
-              {rules.allowed.map((p) => (
-                <button key={p} type="button" className={`chip ${rules.required.includes(p) ? 'req' : ''}`} onClick={() => insert(p)}>
-                  {`{{${p}}}`}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="chips" aria-label="Insert a placeholder">
+            {rules.allowed.map((p) => (
+              <button key={p} type="button" className={`chip ${rules.required.includes(p) ? 'req' : ''}`} onClick={() => insert(p)}>
+                {`{{${p}}}`}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="chat">
           {preview ? <div className="bubble preview">{preview}</div> : <p className="muted small">Fix the placeholders to see a preview.</p>}
         </div>
       </div>
       {error && <p className="error-note">{error}</p>}
-      {editable && (
-        <div className="form-actions">
-          <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !changed}>
-            Save
+      <div className="form-actions">
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !changed}>
+          Save
+        </button>
+        {changed && (
+          <button className="btn btn-sm" onClick={() => setText(value)} disabled={busy}>
+            Discard changes
           </button>
-          {changed && (
-            <button className="btn btn-sm" onClick={() => setText(value)} disabled={busy}>
-              Discard changes
-            </button>
-          )}
-          {customised && (
-            <button className="btn btn-ghost btn-sm" onClick={reset} disabled={busy}>
-              Reset to default
-            </button>
-          )}
-          {meta && customised && (
-            <span className="muted small">
-              Last edited by {meta.updatedBy} · {formatDate(meta.updatedAt, true)}
-            </span>
-          )}
-        </div>
-      )}
+        )}
+        {customised && (
+          <button className="btn btn-ghost btn-sm" onClick={reset} disabled={busy}>
+            Reset to default
+          </button>
+        )}
+        {meta && customised && (
+          <span className="muted small">
+            Last edited by {meta.updatedBy} · {formatDate(meta.updatedAt, true)}
+          </span>
+        )}
+      </div>
     </article>
   );
 }
 
 export default function SettingsPage() {
-  const { admin, can } = useAdmin();
+  const { admin } = useAdmin();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -192,8 +186,6 @@ export default function SettingsPage() {
       .then(setData)
       .catch((e) => setError(e.message));
   }, []);
-
-  const editable = can('templates:edit');
 
   return (
     <>
@@ -213,8 +205,6 @@ export default function SettingsPage() {
             <dd>{admin.name}</dd>
             <dt>Admin ID</dt>
             <dd className="mono">{admin.username}</dd>
-            <dt>Role</dt>
-            <dd>{ROLE_LABELS[admin.role]}</dd>
           </dl>
         </section>
         <PasswordCard />
@@ -223,9 +213,8 @@ export default function SettingsPage() {
       <section className="card" style={{ marginTop: 16 }}>
         <h2 className="section-title">WhatsApp message templates</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          {editable
-            ? 'Change the wording without a code change. Placeholders like {{devoteeName}} are filled in for each booking; required ones are highlighted. New wording applies to the next message sent.'
-            : 'Only owners can change the wording. This is what devotees receive at each step.'}
+          Change the wording without a code change. Placeholders like {'{{devoteeName}}'} are filled in for each booking;
+          required ones are highlighted. New wording applies to the next message sent.
         </p>
         {!data && <div className="skeleton" />}
         <div className="stack">
@@ -238,7 +227,6 @@ export default function SettingsPage() {
                 defaultValue={data.defaults[status]}
                 rules={data.rules[status]}
                 meta={data.meta[status]}
-                editable={editable}
                 onSaved={(next, how) => {
                   setData((d) => ({ ...d, templates: next.templates, meta: next.meta }));
                   setToast(how === 'reset' ? `"${status}" message reset to default` : `"${status}" message saved`);

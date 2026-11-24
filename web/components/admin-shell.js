@@ -5,15 +5,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon } from './icons.js';
 import { AdminProvider } from './admin-context.js';
-import { can } from '@/lib/permissions.js';
-import { ROLE_LABELS } from '@/lib/permissions.js';
 
 const NAV = [
   { href: '/', label: 'Overview', icon: 'overview', match: (p) => p === '/' },
   { href: '/bookings', label: 'Bookings', icon: 'bookings', match: (p) => p.startsWith('/bookings') && p !== '/bookings/new' },
-  { href: '/bookings/new', label: 'New booking', icon: 'plus', match: (p) => p === '/bookings/new', permission: 'bookings:create' },
+  { href: '/bookings/new', label: 'New booking', icon: 'plus', match: (p) => p === '/bookings/new' },
+  { href: '/slots', label: 'Slots', icon: 'calendar', match: (p) => p.startsWith('/slots') },
   { href: '/notifications', label: 'Notifications', icon: 'bell', match: (p) => p.startsWith('/notifications') },
-  { href: '/team', label: 'Team', icon: 'users', match: (p) => p.startsWith('/team'), permission: 'admins:manage' },
   { href: '/settings', label: 'Settings', icon: 'settings', match: (p) => p.startsWith('/settings') },
 ];
 
@@ -59,7 +57,7 @@ export default function AdminShell({ admin, children }) {
           </div>
 
           <nav className="side-nav" aria-label="Admin">
-            {NAV.filter((item) => !item.permission || can(admin.role, item.permission)).map((item) => {
+            {NAV.map((item) => {
               const active = item.match(pathname);
               return (
                 <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
@@ -76,9 +74,7 @@ export default function AdminShell({ admin, children }) {
             </span>
             <span className="who">
               {admin.name}
-              <small>
-                @{admin.username} · {ROLE_LABELS[admin.role] || admin.role}
-              </small>
+              <small>@{admin.username}</small>
             </span>
             <button className="icon-btn on-dark" onClick={signOut} disabled={signingOut} title="Sign out" aria-label="Sign out">
               <Icon name="logout" />

@@ -7,9 +7,9 @@ import { handle } from '../../../../../lib/http.js';
 export const dynamic = 'force-dynamic';
 
 // PATCH /api/bookings/AS-2026-0001/status  { status: "Confirmed", videoUrl?: "https://...", note?: "..." }
-// Moves the booking one step forward and returns the generated notification.   (owner, staff)
+// Moves the booking one step forward and returns the generated notification.
 export const PATCH = handle(async (request, { params }) => {
-  const admin = await requireAdmin('workflow:advance');
+  const admin = await requireAdmin();
   const { id } = await params;
   const { status, videoUrl, note } = await request.json();
   const result = await changeStatus(mongoRepo, id, status, { videoUrl, note, by: admin.name });

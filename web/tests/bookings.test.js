@@ -13,6 +13,7 @@ import {
   createBookingsFromShopifyOrder,
 } from '../lib/bookings-service.js';
 import { createMemoryRepo } from '../lib/repo/memory-repo.js';
+import { bookInSlot } from './helpers.js';
 import { seed } from '../lib/seed.js';
 
 const sample = {
@@ -70,7 +71,7 @@ test('createBooking validates input and starts as Pending with sequential IDs', 
 
 test('changing status records history and creates a WhatsApp notification', async () => {
   const repo = createMemoryRepo();
-  const { bookingId } = await createBooking(repo, sample);
+  const { bookingId } = await bookInSlot(repo, sample);
 
   const { booking, notification } = await changeStatus(repo, bookingId, 'Confirmed');
   assert.equal(booking.status, 'Confirmed');
@@ -81,7 +82,7 @@ test('changing status records history and creates a WhatsApp notification', asyn
   assert.match(notification.message, new RegExp(bookingId));
 
   await assert.rejects(changeStatus(repo, bookingId, 'Completed'), /can only move to "In Progress"/);
-  await changeStatus(repo, bookingId, 'In Progress');
+  await changeStatus(repo, bookingId, 'In Progress', { at: '2026-12-05T05:00:00.000Z' });
   await changeStatus(repo, bookingId, 'Completed');
   await assert.rejects(changeStatus(repo, bookingId, 'Video Available'), /video link/);
   const last = await changeStatus(repo, bookingId, 'Video Available', { videoUrl: 'https://example.com/v/1' });
@@ -95,7 +96,7 @@ test('changing status records history and creates a WhatsApp notification', asyn
 
 test('two admins clicking at once cannot both advance the same booking', async () => {
   const repo = createMemoryRepo();
-  const { bookingId } = await createBooking(repo, sample);
+  const { bookingId } = await bookInSlot(repo, sample);
   const results = await Promise.allSettled([
     changeStatus(repo, bookingId, 'Confirmed'),
     changeStatus(repo, bookingId, 'Confirmed'),
@@ -108,8 +109,8 @@ test('dashboard search, filters and sorting work on seeded data', async () => {
   const repo = createMemoryRepo();
   await seed(repo, new Date('2026-11-24T00:00:00Z'));
   const { bookings: all, total } = await listBookings(repo, { pageSize: 100 });
-  assert.equal(all.length, 20);
-  assert.equal(total, 20);
+  assert.equal(all.length, 21);
+  assert.equal(total, 21);
 
   const { bookings: byName } = await listBookings(repo, { q: 'ananya' });
   assert.equal(byName.length, 1);
@@ -125,8 +126,8 @@ test('dashboard search, filters and sorting work on seeded data', async () => {
   for (let i = 1; i < cheapestFirst.length; i++) assert.ok(cheapestFirst[i - 1].amount <= cheapestFirst[i].amount);
 
   const stats = await getStats(repo);
-  assert.equal(stats.total, 20);
-  assert.equal(Object.values(stats.byStatus).reduce((a, b) => a + b, 0), 20);
+  assert.equal(stats.total, 21);
+  assert.equal(Object.values(stats.byStatus).reduce((a, b) => a + b, 0), 21);
   assert.ok(stats.revenue > 0);
 
   const { bookings: videos } = await listBookings(repo, { status: 'Video Available' });

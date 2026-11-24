@@ -6,11 +6,9 @@ import { useSearchParams } from 'next/navigation';
 import { ALL_STATUSES } from '@/lib/workflow.js';
 import { StatusBadge, ErrorNote, api } from '@/components/ui.js';
 import MessageBubble from '@/components/message-bubble.js';
-import { useAdmin } from '@/components/admin-context.js';
 
 function NotificationsList() {
   const params = useSearchParams();
-  const { can } = useAdmin();
   const [status, setStatus] = useState('all');
   const [delivery, setDelivery] = useState(params.get('delivery') === 'failed' ? 'failed' : 'all');
   const [items, setItems] = useState(null);
@@ -80,7 +78,6 @@ function NotificationsList() {
             <div className="chat">
               <MessageBubble
                 message={n}
-                canResend={can('notifications:resend')}
                 onResent={(updated) => {
                   load();
                   setToast(updated.delivery.status === 'sent' ? 'Message delivered (mock)' : `Still failing: ${updated.delivery.error}`);

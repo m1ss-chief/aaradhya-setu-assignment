@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ALL_STATUSES, STATUS_META } from '@/lib/workflow.js';
+import { ALL_STATUSES, STATUS_META, MESSAGE_META } from '@/lib/workflow.js';
 import { useAdmin } from '@/components/admin-context.js';
 import { StatusBadge, BarList, formatINR, formatDate, ErrorNote, api } from '@/components/ui.js';
 import { Icon } from '@/components/icons.js';
@@ -15,15 +15,13 @@ function greeting() {
 
 export default function OverviewPage() {
   const router = useRouter();
-  const { can } = useAdmin();
   const [stats, setStats] = useState(null);
-  const [admin, setAdmin] = useState(null);
+  const { admin } = useAdmin();
   const [messages, setMessages] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     api('/api/stats').then(setStats).catch((e) => setError(e.message));
-    api('/api/auth/me').then((d) => setAdmin(d.admin)).catch(() => {});
     api('/api/notifications').then((d) => setMessages(d.notifications.slice(0, 5))).catch(() => setMessages([]));
   }, []);
 
@@ -31,7 +29,13 @@ export default function OverviewPage() {
     { label: 'Total bookings', value: stats?.total, icon: 'bookings', hint: 'All time' },
     { label: 'Booking value', value: stats && formatINR(stats.revenue), icon: 'rupee', hint: stats ? `Avg ${formatINR(stats.averageAmount)} · excl. cancelled` : '' },
     { label: 'Awaiting confirmation', value: stats?.byStatus.Pending, icon: 'clock', hint: 'Pending bookings', href: '/bookings?status=Pending', tone: stats?.byStatus.Pending ? 'attention' : '' },
-    { label: 'Pujas in next 7 days', value: stats?.upcomingCount, icon: 'calendar', hint: 'Pending or confirmed' },
+    {
+      label: 'Seats booked, next 7 days',
+      value: stats && `${stats.slots.booked} / ${stats.slots.seats}`,
+      icon: 'calendar',
+      hint: stats ? `${stats.slots.full} slot(s) full · ${stats.slots.closed} closed` : '',
+      href: '/slots',
+    },
   ];
 
   return (
@@ -41,14 +45,25 @@ export default function OverviewPage() {
           <p className="eyebrow">{greeting()}{admin ? `, ${admin.name}` : ''} 🙏</p>
           <h1>Overview</h1>
         </div>
-        {can('bookings:create') && (
-          <Link href="/bookings/new" className="btn btn-primary">
-            <Icon name="plus" /> New booking
-          </Link>
-        )}
+        <Link href="/bookings/new" className="btn btn-primary">
+          <Icon name="plus" /> New booking
+        </Link>
       </div>
 
       <ErrorNote error={error} />
+
+      {stats?.needsSlot > 0 && (
+        <Link href="/bookings?slot=none" className="alert-banner warn">
+          <Icon name="calendar" />
+          <span>
+            <b>
+              {stats.needsSlot} booking{stats.needsSlot > 1 ? 's' : ''} need{stats.needsSlot > 1 ? '' : 's'} a slot.
+            </b>{' '}
+            The requested day had no free pandit. Pick a time before confirming.
+          </span>
+          <Icon name="arrowRight" />
+        </Link>
+      )}
 
       {stats?.failedMessages > 0 && (
         <Link href="/notifications?delivery=failed" className="alert-banner">
@@ -126,6 +141,7 @@ export default function OverviewPage() {
         <section className="card">
           <div className="card-head">
             <h2 className="section-title">Coming up this week</h2>
+            {stats && <span className="muted small">{stats.upcomingCount} puja(s)</span>}
           </div>
           {stats?.upcoming.length === 0 && <p className="muted">No pujas scheduled in the next 7 days.</p>}
           <ul className="mini-list">
@@ -165,7 +181,7 @@ export default function OverviewPage() {
                     <Icon name="bell" size={16} />
                   </span>
                   <span className="grow">
-                    {n.devoteeName} <span className="muted">· {STATUS_META[n.status]?.stage}</span>
+                    {n.devoteeName} <span className="muted">· {MESSAGE_META[n.status]?.stage}</span>
                     <span className="sub clamp">{n.message}</span>
                   </span>
                   <span className="muted small nowrap">{formatDate(n.createdAt, true)}</span>

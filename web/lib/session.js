@@ -43,7 +43,7 @@ async function hmacKey() {
   return keyCache.key;
 }
 
-// payload: { sub: username, name, role }
+// payload: { sub: username, name }
 export async function createSession(payload, { now = Date.now(), ttlSeconds = SESSION_TTL_SECONDS } = {}) {
   const body = { ...payload, iat: Math.floor(now / 1000), exp: Math.floor(now / 1000) + ttlSeconds };
   const data = toB64url(encoder.encode(JSON.stringify(body)));

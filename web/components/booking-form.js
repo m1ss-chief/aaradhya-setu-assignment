@@ -1,8 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { PUJAS } from '@/lib/seed-data.js';
-import { ErrorNote, toDateInput } from './ui.js';
+import { formatPujaDate } from '@/lib/workflow.js';
+import { ErrorNote } from './ui.js';
+import SlotPicker from './slot-picker.js';
+
+const TEMPLES = [...new Set(PUJAS.map((p) => p.templeName))];
 
 const EMPTY = {
   devoteeName: '',
@@ -12,7 +17,7 @@ const EMPTY = {
   pujaName: PUJAS[0].pujaName,
   templeName: PUJAS[0].templeName,
   amount: PUJAS[0].amount,
-  pujaDate: '',
+  slotId: '',
 };
 
 function fromBooking(b) {
@@ -24,7 +29,7 @@ function fromBooking(b) {
     pujaName: b.pujaName || '',
     templeName: b.templeName || '',
     amount: b.amount ?? '',
-    pujaDate: toDateInput(b.pujaDate),
+    slotId: b.slotId || '',
   };
 }
 
@@ -33,6 +38,7 @@ function fromBooking(b) {
 export default function BookingForm({ booking, submitLabel, savingLabel, onSubmit, onCancel }) {
   const initial = useMemo(() => (booking ? fromBooking(booking) : EMPTY), [booking]);
   const [form, setForm] = useState(initial);
+  const [picked, setPicked] = useState(null); // the chosen slot, for the summary line
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -41,19 +47,35 @@ export default function BookingForm({ booking, submitLabel, savingLabel, onSubmi
   const pujaOptions = PUJAS.some((p) => p.pujaName === form.pujaName)
     ? PUJAS
     : [{ pujaName: form.pujaName, templeName: form.templeName, amount: form.amount }, ...PUJAS];
+  const templeOptions = TEMPLES.includes(form.templeName) ? TEMPLES : [form.templeName, ...TEMPLES];
+
+  const creating = !booking;
+  // A booking's slot belongs to one temple; it moves through Reschedule, not here.
+  const templeLocked = booking && (booking.slotId || !['Pending', 'Confirmed'].includes(booking.status));
+  const reschedulable = booking && ['Pending', 'Confirmed'].includes(booking.status);
+
+  // A slot belongs to one temple, so changing the temple clears the chosen slot.
+  function chooseTemple(templeName) {
+    if (templeLocked) return;
+    set({ templeName, ...(creating ? { slotId: '' } : {}) });
+    setPicked(null);
+  }
 
   function choosePuja(name) {
     const puja = PUJAS.find((p) => p.pujaName === name);
+    if (!puja) return set({ pujaName: name });
     // When editing, keep the agreed amount unless the admin changes it.
-    set(puja ? { pujaName: name, templeName: puja.templeName, ...(booking ? {} : { amount: puja.amount }) } : { pujaName: name });
+    set({ pujaName: name, ...(booking ? {} : { amount: puja.amount }) });
+    chooseTemple(puja.templeName);
   }
 
   async function submit(e) {
     e.preventDefault();
+    if (creating && !form.slotId) return setError('Pick a slot: a day and a time with a free pandit.');
     setSaving(true);
     setError('');
     try {
-      await onSubmit(booking ? Object.fromEntries(changed.map((k) => [k, form[k]])) : form);
+      await onSubmit(booking ? Object.fromEntries(changed.filter((k) => k !== 'slotId').map((k) => [k, form[k]])) : form);
     } catch (err) {
       setError(err.message);
       setSaving(false);
@@ -99,16 +121,48 @@ export default function BookingForm({ booking, submitLabel, savingLabel, onSubmi
       </label>
       <label className="field">
         Temple *
-        <input required value={form.templeName} onChange={(e) => set({ templeName: e.target.value })} />
-      </label>
-      <label className="field">
-        Puja date *
-        <input required type="date" value={form.pujaDate} onChange={(e) => set({ pujaDate: e.target.value })} />
+        <select value={form.templeName} onChange={(e) => chooseTemple(e.target.value)} disabled={templeLocked} title={templeLocked ? 'The temple is fixed by the booking\'s slot' : undefined}>
+          {templeOptions.map((t) => (
+            <option key={t}>{t}</option>
+          ))}
+        </select>
       </label>
       <label className="field">
         Amount (₹) *
         <input required type="number" min="1" value={form.amount} onChange={(e) => set({ amount: e.target.value })} />
       </label>
+
+      <div className="field span-2">
+        <span>{creating ? 'Slot *' : 'Slot'}</span>
+        {creating ? (
+          <>
+            <SlotPicker
+              templeName={form.templeName}
+              value={form.slotId}
+              onChange={(slot) => {
+                set({ slotId: slot.id });
+                setPicked(slot);
+              }}
+            />
+            {picked && form.slotId && (
+              <p className="muted small" style={{ margin: '8px 0 0' }}>
+                Puja on <b>{formatPujaDate(picked.startsAt)}</b>
+              </p>
+            )}
+          </>
+        ) : (
+          <p style={{ margin: '4px 0 0' }}>
+            {booking.slotId ? formatPujaDate(booking.pujaDate) : <span className="badge badge-slot">Needs a slot</span>}{' '}
+            {reschedulable ? (
+              <Link href={`/bookings/${booking.bookingId}?reschedule=1`} className="link-sm">
+                {booking.slotId ? 'Reschedule…' : 'Assign a slot…'}
+              </Link>
+            ) : (
+              <span className="muted small">A booking that is &ldquo;{booking.status}&rdquo; can&rsquo;t be rescheduled.</span>
+            )}
+          </p>
+        )}
+      </div>
 
       <div className="span-2">
         <ErrorNote error={error} />

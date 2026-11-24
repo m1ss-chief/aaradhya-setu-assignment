@@ -16,15 +16,15 @@ import {
   canTransition,
   nextStatus,
   messageForStatus,
+  formatPujaDate,
+  istDay,
+  RESCHEDULED,
 } from './workflow.js';
 import { sendWhatsAppMock } from './notifier.js';
+import { ServiceError } from './errors.js';
+import { takeSeat, freeSeat, takeFirstFreeSeat } from './slots-service.js';
 
-export class ServiceError extends Error {
-  constructor(message, status = 400) {
-    super(message);
-    this.status = status;
-  }
-}
+export { ServiceError };
 
 const SORT_FIELDS = {
   date: 'pujaDate',
@@ -42,7 +42,7 @@ function escapeRegex(text) {
 }
 
 // Turns the dashboard's search box and filters into a MongoDB query.
-export function buildBookingQuery({ q, status, puja, from, to } = {}) {
+export function buildBookingQuery({ q, status, puja, from, to, slot } = {}) {
   const query = {};
   if (q && q.trim()) {
     const pattern = { $regex: escapeRegex(q.trim()), $options: 'i' };
@@ -59,6 +59,13 @@ export function buildBookingQuery({ q, status, puja, from, to } = {}) {
     query.status = status;
   }
   if (puja && puja !== 'all') query.pujaName = puja;
+  // slot=none: active bookings still waiting for a slot. slot=<id>: the bookings in one slot.
+  if (slot === 'none') {
+    query.slotId = null;
+    if (!query.status) query.status = { $in: ['Pending', 'Confirmed'] };
+  } else if (slot) {
+    query.slotId = String(slot);
+  }
   if (from || to) {
     query.pujaDate = {};
     if (from) query.pujaDate.$gte = new Date(from);
@@ -97,7 +104,7 @@ export async function exportBookings(repo, params = {}) {
   return repo.findBookings(buildBookingQuery(params), buildSort(params));
 }
 
-const CSV_COLUMNS = ['bookingId', 'devoteeName', 'phone', 'email', 'gotra', 'pujaName', 'templeName', 'pujaDate', 'amount', 'status', 'cancelReason', 'source', 'createdAt'];
+const CSV_COLUMNS = ['bookingId', 'devoteeName', 'phone', 'email', 'gotra', 'pujaName', 'templeName', 'pujaDate', 'slotId', 'amount', 'status', 'cancelReason', 'source', 'createdAt'];
 
 export function bookingsToCsv(bookings) {
   const cell = (v) => {
@@ -125,10 +132,11 @@ const isBlank = (v) => v === undefined || v === null || String(v).trim() === '';
 
 // Validates and normalises booking fields. With `partial`, only the fields
 // present in `input` are checked and returned (used for edits).
-function cleanBookingFields(input, { partial = false } = {}) {
+function cleanBookingFields(input, { partial = false, dateFromSlot = false } = {}) {
   const out = {};
   for (const field of REQUIRED_FIELDS) {
     if (partial && !(field in input)) continue;
+    if (field === 'pujaDate' && dateFromSlot) continue;
     if (isBlank(input[field])) throw new ServiceError(`${field} is required`);
   }
   for (const field of ['devoteeName', 'phone', 'pujaName', 'templeName']) {
@@ -139,7 +147,7 @@ function cleanBookingFields(input, { partial = false } = {}) {
     if (!Number.isFinite(amount) || amount <= 0) throw new ServiceError('amount must be a positive number');
     out.amount = amount;
   }
-  if ('pujaDate' in input) {
+  if ('pujaDate' in input && !dateFromSlot) {
     const pujaDate = new Date(input.pujaDate);
     if (Number.isNaN(pujaDate.getTime())) throw new ServiceError('pujaDate is not a valid date');
     out.pujaDate = pujaDate;
@@ -154,52 +162,134 @@ function cleanBookingFields(input, { partial = false } = {}) {
   return out;
 }
 
-export async function createBooking(repo, input, { source = 'admin', at, by } = {}) {
-  const fields = cleanBookingFields(input);
+// With `slotId`, the booking takes a seat in that slot and the puja date is the
+// slot's start time. Without one, the booking "needs a slot" (only allowed when
+// `requireSlot` is off, e.g. a Shopify order for a day with no free slot).
+// `reservedSlot` is a seat the caller already took (Shopify flow).
+export async function createBooking(repo, input, { source = 'admin', at, by, requireSlot = false, reservedSlot } = {}) {
+  const slotId = reservedSlot?.id || (isBlank(input.slotId) ? null : String(input.slotId));
+  if (requireSlot && !slotId) throw new ServiceError('Pick a slot for this puja');
+  const fields = cleanBookingFields(input, { dateFromSlot: !!slotId });
   const now = at ? new Date(at) : new Date();
   const note = { shopify: 'Created from Shopify order', seed: 'Demo data' }[source] || `Created by ${by || 'admin'}`;
-  return repo.createBooking({
-    bookingId: await repo.nextBookingId(),
-    ...fields,
-    addOns: Array.isArray(input.addOns) ? input.addOns : [],
-    status: 'Pending',
-    statusHistory: [{ status: 'Pending', at: now, note, ...(by ? { by } : {}) }],
-    source,
-    shopifyOrderId: input.shopifyOrderId,
-    ...(by ? { createdBy: by } : {}),
-    createdAt: now,
-  });
+
+  const slot = reservedSlot || (slotId ? await takeSeat(repo, slotId, { templeName: fields.templeName, now }) : null);
+  try {
+    return await repo.createBooking({
+      bookingId: await repo.nextBookingId(),
+      ...fields,
+      ...(slot ? { pujaDate: new Date(slot.startsAt) } : {}),
+      slotId: slot ? slot.id : null,
+      ...(!slot && input.slotNote ? { slotNote: String(input.slotNote) } : {}),
+      addOns: Array.isArray(input.addOns) ? input.addOns : [],
+      status: 'Pending',
+      statusHistory: [{ status: 'Pending', at: now, note, ...(by ? { by } : {}) }],
+      source,
+      shopifyOrderId: input.shopifyOrderId,
+      ...(by ? { createdBy: by } : {}),
+      createdAt: now,
+    });
+  } catch (err) {
+    if (slot) await freeSeat(repo, slot.id); // don't leak the seat if saving failed
+    throw err;
+  }
 }
 
-// Edits a booking's details (not its status).
-export async function updateBooking(repo, bookingId, input = {}, { by } = {}) {
-  await getBooking(repo, bookingId);
+
+
+// Edits a booking's details (not its status, and not its slot: use rescheduleBooking,
+// so every move is recorded and the devotee is told).
+export async function updateBooking(repo, bookingId, input = {}, { by, now = new Date() } = {}) {
+  const booking = await getBooking(repo, bookingId);
   if ('status' in input) {
     throw new ServiceError('Status cannot be edited directly. Use the workflow so the devotee is notified.');
   }
+  if (!isBlank(input.slotId) && String(input.slotId) !== booking.slotId) {
+    throw new ServiceError('Use "Reschedule" to move a booking to another slot.');
+  }
   const editable = Object.fromEntries(Object.entries(input).filter(([k]) => EDITABLE_FIELDS.includes(k)));
+  if (booking.slotId) delete editable.pujaDate; // the date comes from the slot
   if (Object.keys(editable).length === 0) throw new ServiceError('Nothing to update');
   const changes = cleanBookingFields(editable, { partial: true });
-  const updated = await repo.updateBooking(bookingId, {
-    ...changes,
-    updatedAt: new Date(),
-    ...(by ? { updatedBy: by } : {}),
-  });
+  if (booking.slotId && changes.templeName && changes.templeName !== booking.templeName) {
+    throw new ServiceError(`The booking's slot is at ${booking.templeName}. Cancel it and book at ${changes.templeName} instead.`);
+  }
+  const updated = await repo.updateBooking(bookingId, { ...changes, updatedAt: now, ...(by ? { updatedBy: by } : {}) });
   if (!updated) throw new ServiceError(`Booking ${bookingId} not found`, 404);
   return updated;
 }
 
-// Permanently removes a booking and its notification history (owner only).
+// Bookings can move to another slot until the puja starts.
+export const RESCHEDULABLE_STATUSES = ['Pending', 'Confirmed'];
+
+// Moves a booking to another slot at the same temple (or gives a "needs a slot"
+// booking its first slot). The new seat is taken FIRST and the old one freed only
+// after the booking is saved, so a failed move changes nothing. Every move is kept
+// in `scheduleHistory`. A devotee who was already sent a confirmation gets a
+// "Rescheduled" WhatsApp unless notifyDevotee is false.
+export async function rescheduleBooking(repo, bookingId, { slotId, reason, notifyDevotee = true, by, now = new Date() } = {}) {
+  const booking = await getBooking(repo, bookingId);
+  if (isBlank(slotId)) throw new ServiceError('Pick the new slot');
+  if (String(slotId) === booking.slotId) throw new ServiceError('The booking is already in this slot. Pick a different time.');
+  if (!RESCHEDULABLE_STATUSES.includes(booking.status)) {
+    throw new ServiceError(
+      booking.status === CANCELLED
+        ? 'A cancelled booking can\'t be rescheduled. Create a new booking instead.'
+        : `A booking that is "${booking.status}" can't be rescheduled: the puja has already started.`,
+      409,
+    );
+  }
+  const why = String(reason ?? '').trim();
+  if (why.length > 300) throw new ServiceError('Keep the reason under 300 characters');
+
+  const slot = await takeSeat(repo, slotId, { templeName: booking.templeName, now });
+  const entry = {
+    from: booking.slotId ? booking.pujaDate : null,
+    to: new Date(slot.startsAt),
+    at: now,
+    ...(why ? { reason: why } : {}),
+    ...(by ? { by } : {}),
+  };
+  let updated;
+  try {
+    updated = await repo.updateBooking(bookingId, {
+      slotId: slot.id,
+      pujaDate: new Date(slot.startsAt),
+      slotNote: '',
+      scheduleHistory: [...(booking.scheduleHistory || []), entry],
+      updatedAt: now,
+      ...(by ? { updatedBy: by } : {}),
+    });
+  } catch (err) {
+    await freeSeat(repo, slot.id);
+    throw err;
+  }
+  if (!updated) {
+    await freeSeat(repo, slot.id);
+    throw new ServiceError(`Booking ${bookingId} not found`, 404);
+  }
+  await freeSeat(repo, booking.slotId);
+
+  let notification = null;
+  if (booking.status === 'Confirmed' && notifyDevotee) {
+    const { templates } = await getTemplates(repo);
+    notification = await notify(repo, updated, RESCHEDULED, now, templates);
+  }
+  return { booking: updated, notification };
+}
+
+// Permanently removes a booking and its notification history.
 // Day-to-day, bookings should be cancelled instead, which keeps the record.
 export async function deleteBooking(repo, bookingId) {
-  await getBooking(repo, bookingId);
+  const booking = await getBooking(repo, bookingId);
   const notificationsDeleted = await repo.deleteBooking(bookingId);
+  if (booking.status !== CANCELLED) await freeSeat(repo, booking.slotId); // cancelled ones already gave it back
   return { bookingId, notificationsDeleted };
 }
 
 // ───────────────────────── Message templates ─────────────────────────
 
-// Defaults from workflow.js, overridden by whatever owners saved in Settings.
+// Defaults from workflow.js, overridden by whatever admins saved in Settings.
 export async function getTemplates(repo) {
   const saved = await repo.findTemplates();
   const merged = { ...TEMPLATES };
@@ -278,6 +368,13 @@ export async function changeStatus(repo, bookingId, to, { videoUrl, note, by, at
       409,
     );
   }
+  const at = atOverride ? new Date(atOverride) : new Date();
+  if (to === 'Confirmed' && !booking.slotId) {
+    throw new ServiceError('Assign a slot before confirming: the confirmation tells the devotee the date and time.', 409);
+  }
+  if (to === 'In Progress' && istDay(at) < istDay(booking.pujaDate)) {
+    throw new ServiceError(`This puja is scheduled for ${formatPujaDate(booking.pujaDate)}. It can be marked as started on that day.`, 409);
+  }
   if (to === 'Video Available') {
     if (!videoUrl || !/^https?:\/\/\S+$/i.test(videoUrl)) {
       throw new ServiceError('A valid video link (http/https) is required to mark the video as available');
@@ -285,7 +382,6 @@ export async function changeStatus(repo, bookingId, to, { videoUrl, note, by, at
   }
 
   const { templates } = await getTemplates(repo);
-  const at = atOverride ? new Date(atOverride) : new Date();
   const changes = { status: to, ...(to === 'Video Available' ? { videoUrl } : {}) };
   const historyEntry = { status: to, at, ...(note ? { note } : {}), ...(by ? { by } : {}) };
 
@@ -319,6 +415,7 @@ export async function cancelBooking(repo, bookingId, { reason, notifyDevotee = f
   const historyEntry = { status: CANCELLED, at, note: why, ...(by ? { by } : {}) };
   const updated = await repo.updateBookingStatus(bookingId, from, changes, historyEntry);
   if (!updated) throw new ServiceError('This booking was just updated by someone else. Refresh and try again.', 409);
+  await freeSeat(repo, booking.slotId); // the pandit is free for someone else
 
   const { templates } = notifyDevotee ? await getTemplates(repo) : { templates: null };
   const notification = notifyDevotee ? await notify(repo, updated, CANCELLED, at, templates) : null;
@@ -376,6 +473,7 @@ export async function getStats(repo, now = new Date()) {
     repo.findBookings(upcomingQuery, { pujaDate: 1, bookingId: 1 }, { limit: 6 }),
     repo.countNotifications({ 'delivery.status': 'failed' }),
   ]);
+  const needsSlot = await repo.countBookings(buildBookingQuery({ slot: 'none' }));
 
   return {
     total,
@@ -394,6 +492,7 @@ export async function getStats(repo, now = new Date()) {
       status,
     })),
     failedMessages,
+    needsSlot,
   };
 }
 
@@ -401,7 +500,10 @@ export async function getStats(repo, now = new Date()) {
 
 // Shopify "orders/create" webhook -> one booking per puja line item.
 // Devotee details come from the line item properties the product page collects.
-export async function createBookingsFromShopifyOrder(repo, order) {
+// The order is already paid, so it is never rejected: it gets the earliest free
+// slot on the chosen day (or the exact "Slot ID" if the product page sent one);
+// if there is none, the booking is created as "needs a slot" for an admin to place.
+export async function createBookingsFromShopifyOrder(repo, order, { now = new Date() } = {}) {
   const created = [];
   const lineItems = Array.isArray(order?.line_items) ? order.line_items : [];
   for (const item of lineItems) {
@@ -410,6 +512,13 @@ export async function createBookingsFromShopifyOrder(repo, order) {
     const addOns = lineItems
       .filter((other) => other !== item && !(other.properties || []).some((p) => p.name === 'Puja date'))
       .map((other) => ({ name: other.title, price: Number(other.price) || 0, quantity: other.quantity || 1 }));
+    const templeName = props['Temple'] || item.vendor || 'Aaradhya Setu';
+    const requested = String(props['Puja date']);
+    const day = /^\d{4}-\d{2}-\d{2}/.test(requested) ? requested.slice(0, 10) : istDay(requested);
+    let slot = null;
+    if (props['Slot ID']) slot = await takeSeat(repo, props['Slot ID'], { templeName, now }).catch(() => null);
+    slot ||= await takeFirstFreeSeat(repo, templeName, day, now).catch(() => null);
+    const dayLabel = new Date(`${day}T00:00:00+05:30`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
     const booking = await createBooking(
       repo,
       {
@@ -418,13 +527,14 @@ export async function createBookingsFromShopifyOrder(repo, order) {
         email: order?.email,
         gotra: props['Gotra'],
         pujaName: item.title,
-        templeName: props['Temple'] || item.vendor || 'Aaradhya Setu',
-        pujaDate: props['Puja date'],
+        templeName,
+        pujaDate: `${day}T00:00:00+05:30`,
+        slotNote: slot ? undefined : `Devotee asked for ${dayLabel}, but there was no free slot at ${templeName} that day.`,
         amount: (Number(item.price) || 0) * (item.quantity || 1) + addOns.reduce((sum, a) => sum + a.price * a.quantity, 0),
         addOns,
         shopifyOrderId: String(order?.id ?? ''),
       },
-      { source: 'shopify' },
+      { source: 'shopify', reservedSlot: slot, at: now },
     );
     created.push(booking);
   }

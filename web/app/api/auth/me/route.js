@@ -4,8 +4,8 @@ import { handle } from '../../../../lib/http.js';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/auth/me  -> { admin: { username, name, role, lastLoginAt } }
+// GET /api/auth/me  -> { admin: { username, name, lastLoginAt } }
 export const GET = handle(async () => {
-  const { username, name, role, lastLoginAt } = await requireAdmin();
-  return NextResponse.json({ admin: { username, name, role, lastLoginAt } });
+  const { username, name, lastLoginAt } = await requireAdmin();
+  return NextResponse.json({ admin: { username, name, lastLoginAt } });
 });

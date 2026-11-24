@@ -165,19 +165,10 @@ a.btn.disabled { opacity: 0.5; pointer-events: none; }
 .empty-state { text-align: center; padding: 48px 20px; }
 .ok-note { display: flex; align-items: center; gap: 8px; background: #e3f3e8; color: var(--ok); border-radius: 12px; padding: 10px 14px; margin: 0; font-size: 14px; font-weight: 500; }
 
-/* Let both columns shrink below their content width (long names, selects) instead of overflowing. */
+/* Let both columns shrink below their content width (long names) instead of overflowing. */
 .grid-2 { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
 @media (max-width: 900px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 520px) { .team-list li { flex-wrap: wrap; } .team-list .grow { flex-basis: calc(100% - 50px); } }
 
-.team-list { list-style: none; margin: 0; padding: 0; }
-.team-list li { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
-.team-list .grow { flex: 1; min-width: 0; }
-.team-list .sub { display: block; font-size: 12px; color: var(--maroon-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.team-list select { font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; background: var(--card); color: var(--maroon); }
-.avatar.sm { width: 34px; height: 34px; font-size: 12px; }
-.role-help { margin-top: 14px; font-size: 13px; color: var(--maroon-soft); }
-.role-help p { margin: 4px 0; }
 
 .template { border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
 .template-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
@@ -264,3 +255,91 @@ a.btn.disabled { opacity: 0.5; pointer-events: none; }
   .login-header-tag { display: none; }
   .login-logo { font-size: 20px; }
 }
+
+/* ───────────────────────── Slots ───────────────────────── */
+/* Slot picker (booking form): a strip of days, then the times on that day. */
+.slot-picker { display: grid; gap: 10px; margin-top: 4px; }
+.day-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.day-chip {
+  display: grid; justify-items: center; gap: 1px; min-width: 74px; padding: 8px 10px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--maroon); font: inherit; font-size: 13px;
+}
+.day-chip span { font-size: 13px; }
+.day-chip small { font-size: 11px; color: var(--ok); font-weight: 600; }
+.day-chip.none small { color: var(--maroon-soft); }
+.day-chip.none { background: #faf5f0; }
+.day-chip:hover { border-color: var(--saffron); }
+.day-chip.on { border-color: var(--terracotta); background: #fff3e3; box-shadow: 0 0 0 1px var(--terracotta) inset; }
+.time-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.time-chip {
+  display: grid; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--maroon); font: inherit; font-size: 14px;
+}
+.time-chip small { font-size: 12px; color: var(--ok); }
+.time-chip:hover:not(:disabled) { border-color: var(--saffron); }
+.time-chip.on { border-color: var(--terracotta); background: #fff3e3; box-shadow: 0 0 0 1px var(--terracotta) inset; }
+.time-chip:disabled { cursor: not-allowed; background: #faf5f0; color: var(--maroon-soft); }
+.time-chip:disabled small { color: var(--maroon-soft); }
+.slot-empty { padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; font-size: 14px; color: var(--maroon-soft); }
+
+/* Slots page */
+.create-slots { margin-bottom: 16px; }
+.grid-dates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 2px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--card); color: var(--maroon-soft);
+  border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.pill.on { background: var(--maroon); border-color: var(--maroon); color: #fff; }
+.pill button { border: 0; background: none; color: inherit; font-size: 15px; line-height: 1; cursor: pointer; padding: 0; }
+.add-time { display: inline-flex; gap: 6px; align-items: center; }
+.add-time input { font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 10px; padding: 5px 8px; background: var(--card); color: var(--maroon); }
+.slot-filters { align-items: center; justify-content: space-between; }
+.week-nav { display: flex; align-items: center; gap: 6px; }
+.week-nav b { min-width: 150px; text-align: center; font-size: 15px; }
+.slot-summary { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--maroon-soft); margin: 0 0 14px; }
+.slot-summary b { color: var(--maroon); }
+.slot-days { display: grid; gap: 12px; }
+.slot-day { padding: 16px 18px; }
+.slot-day .section-title { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.slot-day.is-today { border-color: var(--saffron); }
+.slot-list { list-style: none; margin: 0; padding: 0; }
+.slot-row {
+  display: grid; grid-template-columns: 92px minmax(0, 1fr) auto auto; gap: 14px; align-items: center;
+  padding: 10px 0; border-top: 1px dashed var(--line);
+}
+.slot-row:first-child { border-top: 0; }
+.slot-row.is-past { opacity: 0.6; }
+.slot-time { display: grid; }
+.slot-temple { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.meter { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.seat { width: 22px; height: 8px; border-radius: 4px; background: var(--cream-deep); box-shadow: 0 0 0 1px var(--line) inset; }
+.seat.taken { background: var(--terracotta); box-shadow: none; }
+.slot-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.stepper-ctl { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.stepper-ctl button { border: 0; background: var(--card); color: var(--maroon); width: 30px; height: 30px; font-size: 16px; cursor: pointer; }
+.stepper-ctl button:hover:not(:disabled) { background: var(--cream-deep); }
+.stepper-ctl button:disabled { color: #cdbdb2; cursor: not-allowed; }
+.stepper-ctl span { min-width: 26px; text-align: center; font-weight: 700; font-size: 14px; }
+.skipped ul { margin: 6px 0; padding-left: 18px; }
+.as-link { border: 0; background: none; padding: 0; cursor: pointer; font: inherit; }
+@media (max-width: 760px) {
+  .slot-row { grid-template-columns: 70px minmax(0, 1fr) auto; }
+  .slot-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .week-nav b { min-width: 0; }
+}
+@media (max-width: 520px) { .grid-dates { grid-template-columns: minmax(0, 1fr); } }
+
+/* Booking without a slot */
+.badge-slot { background: #fff3e3; color: #9a5a12; border: 1px dashed #f0c79a; }
+.slot-banner { display: flex; align-items: flex-start; gap: 12px; background: #fff3e3; border: 1px solid #f0c79a; color: #7a4a12; border-radius: 14px; padding: 12px 16px; margin-bottom: 16px; font-size: 14px; }
+.slot-banner div { flex: 1; }
+.alert-banner.warn { background: #fff3e3; border-color: #f0c79a; color: #7a4a12; }
+.alert-banner.warn:hover { background: #fdeacc; }
+.modal.modal-wide { width: min(720px, 100%); }
+.move-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 14px; color: var(--maroon); }
+.move-summary .arrow { color: var(--terracotta); font-weight: 700; }
+.move-summary b { background: var(--cream-deep); border-radius: 8px; padding: 3px 8px; }
+.reschedules { list-style: none; margin: 12px 0 0; padding: 0; font-size: 14px; }
+.reschedules li { padding: 8px 0; border-top: 1px dashed var(--line); }
+.reschedules .sub { display: block; font-size: 12px; color: var(--maroon-soft); }

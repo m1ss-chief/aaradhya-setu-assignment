@@ -157,7 +157,7 @@ export default function LoginForm({ next, demoHint }) {
                 Demo credentials: <code>{demoHint}</code>
               </p>
             )}
-            <p className="login-legal">Authorised Aaradhya Setu staff only. Sign-ins and booking changes are logged.</p>
+            <p className="login-legal">Authorised Aaradhya Setu admins only. Sign-ins and booking changes are logged.</p>
           </section>
         </div>
       </main>

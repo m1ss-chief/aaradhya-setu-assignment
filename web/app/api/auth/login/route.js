@@ -34,8 +34,8 @@ export const POST = handle(async (request) => {
   }
   failures.delete(key);
 
-  const token = await createSession({ sub: admin.username, name: admin.name, role: admin.role });
-  const res = NextResponse.json({ admin: { username: admin.username, name: admin.name, role: admin.role } });
+  const token = await createSession({ sub: admin.username, name: admin.name });
+  const res = NextResponse.json({ admin: { username: admin.username, name: admin.name } });
   res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
   return res;
 });

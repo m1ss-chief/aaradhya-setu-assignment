@@ -101,6 +101,7 @@ export function ConfirmDialog({
   busy = false,
   confirmDisabled = false,
   cancelLabel = 'Cancel',
+  wide = false,
   onConfirm,
   onCancel,
 }) {
@@ -115,7 +116,7 @@ export function ConfirmDialog({
   if (!open) return null;
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}>
-      <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="modal-title">
+      <div className={`modal ${wide ? 'modal-wide' : ''}`} role="alertdialog" aria-modal="true" aria-labelledby="modal-title">
         <h2 id="modal-title">{title}</h2>
         <div className="modal-body">{children}</div>
         <div className="modal-actions">

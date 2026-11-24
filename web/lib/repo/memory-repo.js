@@ -1,6 +1,6 @@
 // In-memory implementation of the same data layer, used by the tests.
 // It understands the query shapes the services produce:
-// equality, $or, $regex, $gte/$lte, $ne, $in and dotted paths ("delivery.status").
+// equality, $or, $regex, $gt/$gte/$lt/$lte, $ne, $in and dotted paths ("delivery.status").
 
 function get(doc, path) {
   return path.split('.').reduce((v, key) => (v == null ? undefined : v[key]), doc);
@@ -16,6 +16,8 @@ function matches(doc, query) {
       if ('$in' in cond && !cond.$in.includes(value)) return false;
       if ('$gte' in cond && !(new Date(value) >= cond.$gte)) return false;
       if ('$lte' in cond && !(new Date(value) <= cond.$lte)) return false;
+      if ('$gt' in cond && !(new Date(value) > cond.$gt)) return false;
+      if ('$lt' in cond && !(new Date(value) < cond.$lt)) return false;
       return true;
     }
     return value === cond;
@@ -42,7 +44,9 @@ export function createMemoryRepo() {
   const notifications = [];
   const admins = [];
   const templates = [];
+  const slots = [];
   let seq = 0;
+  let slotSeq = 0;
   let notificationSeq = 0;
 
   return {
@@ -50,6 +54,7 @@ export function createMemoryRepo() {
     notifications,
     admins,
     templates,
+    slots,
 
     // ── Bookings ──
     async findBookings(query, sort, { skip = 0, limit = 0 } = {}) {
@@ -138,6 +143,47 @@ export function createMemoryRepo() {
       return copy(n);
     },
 
+    // ── Slots ── (JavaScript is single-threaded, so each method below is atomic)
+    async createSlots(docs) {
+      return docs.map((doc) => {
+        slotSeq += 1;
+        const stored = { id: `s${slotSeq}`, booked: 0, status: 'open', ...copy(doc) };
+        slots.push(stored);
+        return copy(stored);
+      });
+    },
+    async findSlots(query, sort = { startsAt: 1 }) {
+      return slots.filter((s) => matches(s, query)).sort(sorter(sort)).map(copy);
+    },
+    async findSlotById(id) {
+      const s = slots.find((x) => x.id === id);
+      return s ? copy(s) : null;
+    },
+    async reserveSeat(id, notBefore) {
+      const s = slots.find((x) => x.id === id);
+      if (!s || s.status !== 'open' || !(new Date(s.startsAt) > notBefore) || s.booked >= s.capacity) return null;
+      s.booked += 1;
+      return copy(s);
+    },
+    async releaseSeat(id) {
+      const s = slots.find((x) => x.id === id);
+      if (!s || s.booked <= 0) return null;
+      s.booked -= 1;
+      return copy(s);
+    },
+    async updateSlot(id, changes) {
+      const s = slots.find((x) => x.id === id);
+      if (!s || ('capacity' in changes && s.booked > changes.capacity)) return null;
+      Object.assign(s, copy(changes));
+      return copy(s);
+    },
+    async deleteSlot(id) {
+      const i = slots.findIndex((x) => x.id === id && x.booked === 0);
+      if (i === -1) return false;
+      slots.splice(i, 1);
+      return true;
+    },
+
     // ── Message templates ──
     async findTemplates() {
       return templates.map(copy);
@@ -153,9 +199,6 @@ export function createMemoryRepo() {
     },
 
     // ── Admins ──
-    async listAdmins() {
-      return admins.map(copy);
-    },
     async findAdminByUsername(username) {
       const a = admins.find((x) => x.username === username);
       return a ? copy(a) : null;
@@ -174,10 +217,6 @@ export function createMemoryRepo() {
       if (!a) return null;
       Object.assign(a, copy(changes));
       return copy(a);
-    },
-    async deleteAdmin(username) {
-      const i = admins.findIndex((x) => x.username === username);
-      if (i !== -1) admins.splice(i, 1);
     },
     async recordAdminLogin(username, at) {
       const a = admins.find((x) => x.username === username);

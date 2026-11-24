@@ -6,17 +6,17 @@ import { handle } from '../../../../lib/http.js';
 
 export const dynamic = 'force-dynamic';
 
-// PUT /api/templates/Confirmed  { body: "..." }   (owner)
+// PUT /api/templates/Confirmed  { body: "..." }
 export const PUT = handle(async (request, { params }) => {
-  const admin = await requireAdmin('templates:edit');
+  const admin = await requireAdmin();
   const status = decodeURIComponent((await params).status);
   const { body } = await request.json();
   return NextResponse.json(await saveTemplate(mongoRepo, status, body, { by: admin.name }));
 });
 
-// DELETE /api/templates/Confirmed  -> back to the default wording   (owner)
+// DELETE /api/templates/Confirmed  -> back to the default wording
 export const DELETE = handle(async (_request, { params }) => {
-  await requireAdmin('templates:edit');
+  await requireAdmin();
   const status = decodeURIComponent((await params).status);
   return NextResponse.json(await resetTemplate(mongoRepo, status));
 });

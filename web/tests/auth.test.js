@@ -6,6 +6,7 @@ import { saveAdmin, authenticate } from '../lib/auth-service.js';
 import { createSession, verifySession } from '../lib/session.js';
 import { createBooking, changeStatus, updateBooking, deleteBooking, getBooking, listNotifications, getStats } from '../lib/bookings-service.js';
 import { createMemoryRepo } from '../lib/repo/memory-repo.js';
+import { bookInSlot } from './helpers.js';
 
 const sample = {
   devoteeName: 'Ananya Sharma',
@@ -54,7 +55,7 @@ test('admin login: right password works, wrong password or unknown ID fails', as
 
 test('session tokens are signed, expire, and reject tampering', async () => {
   const now = Date.now();
-  const token = await createSession({ sub: 'admin', name: 'Setu Admin', role: 'admin' }, { now, ttlSeconds: 60 });
+  const token = await createSession({ sub: 'admin', name: 'Setu Admin' }, { now, ttlSeconds: 60 });
   const session = await verifySession(token, { now });
   assert.equal(session.sub, 'admin');
   assert.equal(session.name, 'Setu Admin');
@@ -91,8 +92,8 @@ test('updateBooking edits details, validates, and never changes status', async (
 
 test('deleteBooking removes the booking and its notification history', async () => {
   const repo = createMemoryRepo();
-  const keep = await createBooking(repo, sample);
-  const gone = await createBooking(repo, { ...sample, devoteeName: 'Rohit Verma' });
+  const keep = await bookInSlot(repo, sample);
+  const gone = await bookInSlot(repo, { ...sample, devoteeName: 'Rohit Verma' });
   await changeStatus(repo, gone.bookingId, 'Confirmed', { by: 'Setu Admin' });
   await changeStatus(repo, keep.bookingId, 'Confirmed');
 
@@ -106,7 +107,7 @@ test('deleteBooking removes the booking and its notification history', async () 
 
 test('status history records which admin made each change', async () => {
   const repo = createMemoryRepo();
-  const { bookingId } = await createBooking(repo, sample, { by: 'Setu Admin' });
+  const { bookingId } = await bookInSlot(repo, sample, { by: 'Setu Admin' });
   const { booking } = await changeStatus(repo, bookingId, 'Confirmed', { by: 'Priya (Ops)' });
   assert.equal(booking.statusHistory[0].note, 'Created by Setu Admin');
   assert.equal(booking.statusHistory[1].by, 'Priya (Ops)');

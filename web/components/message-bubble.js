@@ -1,13 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { STATUS_META } from '@/lib/workflow.js';
+import { MESSAGE_META } from '@/lib/workflow.js';
 import { formatDate, api } from './ui.js';
 import { Icon } from './icons.js';
 
-// One WhatsApp message with its delivery state. Failed messages get a Resend button
-// (for roles allowed to resend); the message goes to the booking's current number.
-export default function MessageBubble({ message: n, canResend, onResent }) {
+// One WhatsApp message with its delivery state. Failed messages get a Resend button;
+// the message goes to the booking's current number.
+export default function MessageBubble({ message: n, onResent }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const failed = n.delivery?.status === 'failed';
@@ -29,7 +29,7 @@ export default function MessageBubble({ message: n, canResend, onResent }) {
     <div className={`bubble ${failed ? 'bubble-failed' : ''}`}>
       {n.message}
       <div className="bubble-meta">
-        <span>{STATUS_META[n.status]?.stage || n.status}</span>
+        <span>{MESSAGE_META[n.status]?.stage || n.status}</span>
         <span>
           {formatDate(n.lastAttemptAt || n.createdAt, true)}{' '}
           {failed ? (
@@ -49,7 +49,7 @@ export default function MessageBubble({ message: n, canResend, onResent }) {
           <span>
             {n.delivery.error} <span className="muted">· to {n.to}</span>
           </span>
-          {canResend && (
+          {onResent && (
             <button className="btn btn-sm" onClick={resend} disabled={sending}>
               <Icon name="refresh" size={14} /> {sending ? 'Sending…' : 'Resend'}
             </button>
