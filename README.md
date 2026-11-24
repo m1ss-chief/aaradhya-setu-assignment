@@ -2,16 +2,16 @@
 
 **Mili Parashar** · IIT Madras (BS Data Science) · parasharmili19@gmail.com
 
-My main submission is **Option 2, the puja booking admin dashboard** (Next.js + Node API routes + MongoDB). It runs with sign-in, full booking CRUD, **puja slots with clash prevention**, cancellation, server-side pagination and an editable message workflow. I also connected it to **Option 3** (workflow + WhatsApp notifications) and **Option 1** (Shopify puja product page), because the three are parts of one journey:
+My submission is **Option 2, the puja booking admin dashboard** (Next.js + Node API routes + MongoDB). It runs with sign-in, full booking CRUD, **puja slots with clash prevention**, cancellation, server-side pagination and an editable message workflow. I also connected it to **Option 3** (workflow + WhatsApp notifications), because the two are parts of one journey:
 
 ```
- Devotee                    Aaradhya Setu team                           Devotee's WhatsApp
- ───────                    ──────────────────                           ──────────────────
- Option 1                   Option 2                                     Option 3
- Shopify puja page  ──────► Admin dashboard (Next.js + MongoDB)  ──────► Workflow + notifications
- package, devotee   order   sign-in · search · filter · CRUD            Confirmed → Puja Started →
- details, add-ons  webhook  slots · cancel · paging · CSV · settings     Completed → Video Available
-                                                                         (or Cancelled), with retries
+ Aaradhya Setu team                                    Devotee's WhatsApp
+ ──────────────────                                    ──────────────────
+ Option 2                                              Option 3
+ Admin dashboard (Next.js + MongoDB)          ──────►  Workflow + notifications
+ sign-in · search · filter · CRUD                      Confirmed → Puja Started →
+ slots · cancel · paging · CSV · settings              Completed → Video Available
+                                                       (or Cancelled), with retries
 ```
 
 ![Overview](docs/screenshots/overview.png)
@@ -106,7 +106,7 @@ Devotees book, but a temple can only perform as many pujas at once as it has pan
 - **Workflow rules:**
   - a booking **can't be confirmed without a slot**, because the confirmation tells the devotee the date and time;
   - a puja **can't be marked as started before its day**.
-- **Shopify orders are paid, so they are never rejected.** The order takes the first free slot on the chosen day (or the exact `Slot ID` if the product page sends one). If the day is full or closed, the booking is flagged **Needs a slot** on the overview and the bookings list, and the admin places it.
+- **Shopify orders are paid, so they are never rejected.** The order takes the first free slot on the chosen day (or the exact `Slot ID` if the order includes one). If the day is full or closed, the booking is flagged **Needs a slot** on the overview and the bookings list, and the admin places it.
 
 ![Needs a slot](docs/screenshots/needs-slot.png)
 
@@ -147,21 +147,9 @@ Moving a booking forward, cancelling it and deleting it all ask first. The statu
 
 ![Workflow complete](docs/screenshots/details-complete.png)
 
-## Option 1 · Shopify custom puja product page
+## Shopify orders → bookings
 
-`shopify-theme/sections/aaradhya-puja-product.liquid` (+ CSS, JS, product template)
-
-![Shopify product page](docs/screenshots/shop-desktop.png)
-
-- **Visually aligned with aaradhyasetu.com:** colours taken from the live site (maroon `#3A1E22`, terracotta `#C5532F`, saffron `#E08A2B`, cream), Bricolage Grotesque headings, pill buttons.
-- Main image and thumbnail gallery, description, price with compare-at price, and benefits from section blocks (or a `custom.benefits` metafield).
-- **Package picker** (variants as pills), with live price, availability and variant id.
-- **Devotee details for the sankalp** (name, WhatsApp number, gotra, puja date) sent as **line item properties**, so the booking system receives them with the order.
-- **Optional offering add-ons**, a quantity selector and a live total. With JavaScript, the puja and its add-ons go to the cart in **one** `/cart/add.js` request; without JavaScript it still works as a normal Shopify form.
-- **Mobile:** single column, large touch targets, and a sticky Add to Cart bar.
-
-**Preview without a store:** `npx serve shopify-theme -l 5000`, then open http://localhost:5000/preview/.
-**In a real store:** copy the section, assets and `templates/product.puja.json` into an Online Store 2.0 theme, create a puja product (vendor = temple, variants = packages) and assign the `product.puja` template. Optionally point an `orders/create` webhook to `/api/webhooks/shopify/orders-create`, with its secret in `SHOPIFY_WEBHOOK_SECRET`.
+Orders placed on the Shopify store can become bookings automatically. Point an `orders/create` webhook at `/api/webhooks/shopify/orders-create` and put its secret in `SHOPIFY_WEBHOOK_SECRET`. The request signature (HMAC) is checked. Each puja in the order becomes a Pending booking, with the devotee's details read from the line item properties and add-ons included in the amount.
 
 ---
 
@@ -238,7 +226,6 @@ web/
     seed-data.js, seed.js   Demo data, generated through the real workflow
   scripts/                  seed.mjs, create-admin.mjs
   tests/                    bookings, auth, features and slots tests (node --test)
-shopify-theme/              Option 1: section, assets, template, static preview
 ```
 
 ## Testing
@@ -266,6 +253,6 @@ shopify-theme/              Option 1: section, assets, template, static preview
 - Shared rate limiting (Redis) when running on several servers, and an audit log page.
 - Upload the puja video directly (S3) instead of pasting a link.
 - Refunds linked to cancellations.
-- Named pandits (who is free, who does which puja) instead of a pandit count, and a public availability endpoint so the Shopify product page only offers free slots.
+- Named pandits (who is free, who does which puja) instead of a pandit count, and a public availability endpoint so the online store only offers free slots.
 
 *AI tools were used while building this, as the brief allows. I can walk through and explain every part of the code.*
